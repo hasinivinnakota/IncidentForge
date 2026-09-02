@@ -10,8 +10,10 @@
 .env.local
 .env.*.local
 *.pem
+!infrastructure/docker/config/certs/root-ca.pem
 *.key
 *.crt
+*.srl
 *.p12
 secrets/
 credentials/
