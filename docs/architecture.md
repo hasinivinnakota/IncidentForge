@@ -1,4 +1,4 @@
-# ThreatPilot — Architecture Document
+# IncidentForge — Architecture Document
 
 **Last Updated:** 2026-08-31  
 **Status:** Approved (Phase 0 Assessment)
@@ -7,7 +7,7 @@
 
 ## 1. Architecture Overview
 
-ThreatPilot uses a **Hybrid Architecture**: Docker containers (via WSL2) for the Wazuh SIEM stack, with native Windows components for endpoint telemetry and application services.
+IncidentForge uses a **Hybrid Architecture**: Docker containers (via WSL2) for the Wazuh SIEM stack, with native Windows components for endpoint telemetry and application services.
 
 ### Why Hybrid?
 
@@ -41,7 +41,7 @@ ThreatPilot uses a **Hybrid Architecture**: Docker containers (via WSL2) for the
 │  │  └────────────────┘  │     │  └────────────┬────────────┘  │ │
 │  │                      │     │               │               │ │
 │  │  ┌────────────────┐  │     │  ┌────────────▼────────────┐  │ │
-│  │  │  ThreatPilot   │  │     │  │  Wazuh Dashboard        │  │ │
+│  │  │ IncidentForge  │  │     │  │  Wazuh Dashboard        │  │ │
 │  │  │  Backend       │◄─┼─────┤  │  (512 MB RAM limit)     │  │ │
 │  │  │  (FastAPI)     │  │     │  └─────────────────────────┘  │ │
 │  │  └───────┬────────┘  │     │                               │ │
@@ -87,7 +87,7 @@ Wazuh Manager (decodes, analyzes, generates alerts)
 Wazuh Indexer (stores alerts, searchable index)
     │
     ▼  Port 9200 (REST API)
-ThreatPilot Backend (FastAPI)
+IncidentForge Backend (FastAPI)
     │
     ├──► Alert Normalizer
     │       │
@@ -132,7 +132,7 @@ ThreatPilot Backend (FastAPI)
 | **Wazuh Indexer** | Stores and indexes alerts (OpenSearch-based) | 1.5 GB | 9200 |
 | **Wazuh Dashboard** | Web UI for Wazuh (OpenSearch Dashboards) | 512 MB | 443 |
 
-### 4.3 ThreatPilot Application (Native Windows)
+### 4.3 IncidentForge Application (Native Windows)
 
 | Component | Technology | Purpose |
 |---|---|---|
@@ -153,7 +153,7 @@ ThreatPilot Backend (FastAPI)
 | Wazuh Indexer (Docker) | 1.5 GB (capped) |
 | Wazuh Dashboard (Docker) | 512 MB (capped) |
 | Docker/WSL2 overhead | ~500 MB |
-| ThreatPilot Backend | ~300 MB |
+| IncidentForge Backend | ~300 MB |
 | ML Component | ~500 MB |
 | SOC Dashboard (dev server) | ~200 MB |
 | IDE + development tools | ~1.5 GB |
@@ -176,7 +176,7 @@ Port Map:
   443   → Wazuh Dashboard (HTTPS web UI)
   9200  → Wazuh Indexer  (REST API)
   55000 → Wazuh API      (management)
-  8000  → ThreatPilot Backend (FastAPI)
+    8000  → IncidentForge Backend (FastAPI)
   5173  → SOC Dashboard  (Vite dev server)
 ```
 
@@ -200,8 +200,8 @@ Port Map:
 All project data resides on **D: drive** (195 GB free):
 
 ```
-D:\ThreatPilot\           → Project code & configuration
-D:\ThreatPilot\datasets\  → Sample data, simulation artifacts
+D:\IncidentForge\          → Project code & configuration
+D:\IncidentForge\datasets\ → Sample data, simulation artifacts
 D:\DockerData\            → Docker Desktop data root (configured in Phase 1)
 ```
 

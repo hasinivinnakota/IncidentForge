@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">🛡️ THREATPILOT</h1>
+     <h1 align="center">🛡️ INCIDENTFORGE</h1>
   <p align="center">
     <strong>AI-Assisted SOC Investigation & Automated Incident Response Platform</strong>
   </p>
@@ -12,7 +12,7 @@
 
 ## 🎯 Overview
 
-ThreatPilot is an authorized defensive cybersecurity laboratory that integrates:
+IncidentForge is an authorized defensive cybersecurity laboratory that integrates:
 
 - **Endpoint Telemetry** — Windows event collection via Sysmon
 - **SIEM** — Wazuh Manager for log aggregation, alerting, and rule-based detection
@@ -67,7 +67,7 @@ Windows Endpoint (Sysmon + Wazuh Agent)
 ## 📁 Project Structure
 
 ```
-ThreatPilot/
+IncidentForge/
 ├── backend/              # FastAPI backend API
 ├── dashboard/            # React SOC dashboard
 ├── infrastructure/       # Docker & configuration files
