@@ -1,0 +1,36 @@
+"""FastAPI application entry point."""
+
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+from .api.routes import events, health
+from .config import get_settings
+from .database import get_session, init_db
+
+settings = get_settings()
+logging.basicConfig(level=getattr(logging, settings.log_level, logging.INFO))
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if get_session not in app.dependency_overrides:
+        init_db()
+    logger.info("IncidentForge API started", extra={"environment": settings.environment})
+    yield
+
+
+app = FastAPI(title=settings.application_name, version="0.1.0", lifespan=lifespan)
+app.include_router(health.router)
+app.include_router(events.router)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    logger.warning("Request validation failed", extra={"path": request.url.path, "error_count": len(exc.errors())})
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+

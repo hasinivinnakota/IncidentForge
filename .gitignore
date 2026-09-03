@@ -97,6 +97,12 @@ infrastructure/docker/wazuh-dashboard/data/
 wazuh-data/
 ossec-logs/
 
+# Application databases
+backend/data/*.db
+*.sqlite
+*.sqlite3
+*.db
+
 # ==========================================
 # Logs
 # ==========================================

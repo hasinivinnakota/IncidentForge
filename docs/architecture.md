@@ -1,7 +1,7 @@
 # IncidentForge — Architecture Document
 
-**Last Updated:** 2026-08-31  
-**Status:** Approved (Phase 0 Assessment)
+**Last Updated:** 2026-09-03
+**Status:** Approved (Phase 5 Backend Foundation complete)
 
 ---
 
@@ -206,3 +206,94 @@ D:\DockerData\            → Docker Desktop data root (configured in Phase 1)
 ```
 
 **C: drive** (12.7 GB free) is NOT used for project or Docker data.
+
+## 9. Wazuh Ingestion Compatibility Note
+
+Phase 2F is complete with a known ingestion compatibility limitation. The Wazuh Manager and its embedded Filebeat use Filebeat 7.10.2, which produces legacy `_type` metadata in Elasticsearch bulk requests. OpenSearch 2.13 rejects this metadata, so continuous indexing of new Wazuh alerts is currently blocked.
+
+The Wazuh Manager, Indexer, Dashboard, Manager API, TLS, and persistent storage infrastructure is operational. The existing Wazuh alert index and its 195 alert documents are preserved. Wazuh 4.9.2 was inspected and retains Filebeat 7.10.2, so it does not resolve this issue. The official `compatibility.override_main_response_version` response override was tested and rejected because it breaks Dashboard compatibility. No unsupported workaround was implemented; this remains a documented infrastructure limitation rather than a silently masked failure.
+
+The Phase 5 backend should keep telemetry ingestion behind an adapter boundary so IncidentForge is not tightly coupled to the currently blocked Filebeat-to-OpenSearch path.
+
+## 10. Phase 5 Backend Foundation
+
+The initial IncidentForge backend foundation is implemented in Python with FastAPI, Pydantic, and Uvicorn. Telemetry enters through a source-agnostic adapter contract and is converted by a deterministic normalization service into the canonical event model.
+
+Canonical models now define normalized events, alerts, incidents, investigation results, response actions, and audit events.
+
+### 10.1 Implemented Components
+
+The following components of the Phase 5 backend foundation are now implemented:
+
+| Component | Status | Responsibility |
+|---|---|---|
+| Ingestion adapter boundary | Implemented | Source-agnostic adapter contract (current: `FixtureAdapter` for deterministic development/testing). Real Wazuh ingestion is not implemented. |
+| Event normalization | Implemented | Deterministic conversion of raw telemetry into the canonical `NormalizedEvent` model via `NormalizationService`. |
+| Event processing service | Implemented | Orchestrates persistence and audit for each accepted event via `EventProcessingService`. |
+| Repository / persistence layer | Implemented | `EventRepository` owns all database persistence operations against the SQLite-backed SQLModel store. |
+| SQLite persistence | Implemented | Local SQLite database is the current development persistence layer. |
+
+### 10.2 Current Event Flow
+
+The currently implemented event intake flow is:
+
+```
+Request
+    │
+    ▼
+Pydantic validation  (NormalizedEvent)
+    │
+    ▼
+NormalizationService
+    │
+    ▼
+EventProcessingService
+    │
+    ▼
+EventRepository
+    │
+    ▼
+SQLite persistence  (Event / AuditEvent rows)
+    │
+    ▼
+AuditEvent  (recorded for "created" and "duplicate" outcomes)
+    │
+    ▼
+EventProcessingResult
+    │
+    ▼
+HTTP response
+```
+
+Key properties of the current implementation:
+
+- **Event intake is persistent.** Accepted events are stored in the SQLite-backed `Event` table.
+- **SQLite is the current development persistence layer.** It is not a production store; production-grade persistence (e.g. PostgreSQL / cloud-managed) is a future migration.
+- **`EventRepository` owns database persistence operations.** The processing service never speaks to the session directly.
+- **`EventProcessingService` owns event-processing orchestration.** It calls the repository for both event persistence and audit-event creation.
+- **Duplicate event IDs are handled deterministically.** A re-submitted `event_id` is matched against the existing row by `EventRepository`.
+- **Duplicates do not create another `Event` row.** The repository returns the existing row and a `created=False` flag.
+- **Duplicates do not overwrite the original event.** The existing row is preserved unchanged.
+- **Audit records are generated for meaningful processing outcomes.** An `AuditEvent` is written for both the `event.created` and `event.duplicate` actions.
+- **Persistence is already implemented.** It is not deferred.
+
+### 10.3 Architectural Boundaries
+
+The current backend preserves these architectural boundaries, and future layers plug in behind them without changing earlier layers:
+
+1. **Ingestion adapter boundary** — `FixtureAdapter` is the current deterministic development/test adapter. Real Wazuh ingestion is not implemented.
+2. **Event normalization** — `NormalizationService` produces the canonical `NormalizedEvent`.
+3. **Event processing service** — `EventProcessingService` orchestrates persistence and audit.
+4. **Repository / persistence layer** — `EventRepository` encapsulates SQLite access for events and audit events.
+5. **Detection / correlation** — Future layer.
+6. **Threat-intelligence enrichment** — Future layer.
+7. **AI investigation** — Future layer.
+8. **Controlled response engine** — Future layer; response actions remain data-only at this stage and no commands or automated actions are executed.
+
+### 10.4 Wazuh Compatibility Constraint (Reminder)
+
+The Wazuh → Filebeat → OpenSearch `_type` metadata limitation documented in Section 9 remains a known infrastructure limitation. The adapter boundary intentionally isolates the backend from that path so the Filebeat-to-OpenSearch ingestion block does not block development. The current `FixtureAdapter` is the deterministic development/test ingestion adapter; real Wazuh ingestion is not implemented in this phase.
+
+### 10.5 Future Persistence Evolution
+
+SQLite is used as the current development persistence layer. A future migration to a production-grade store (for example PostgreSQL or a managed cloud database) is part of the planned evolution of the persistence layer, not part of "future database persistence," which is already implemented.

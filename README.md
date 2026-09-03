@@ -1,4 +1,4 @@
-<p align="center">
+﻿<p align="center">
      <h1 align="center">🛡️ INCIDENTFORGE</h1>
   <p align="center">
     <strong>AI-Assisted SOC Investigation & Automated Incident Response Platform</strong>
@@ -105,7 +105,7 @@ This project is an **authorized defensive cybersecurity laboratory** designed fo
 - [ ] **Phase 2** — Wazuh SIEM Deployment
 - [ ] **Phase 3** — Endpoint Telemetry (Sysmon + Wazuh Agent)
 - [ ] **Phase 4** — Detection Engineering & MITRE Mapping
-- [ ] **Phase 5** — Alert Pipeline (Normalization, Correlation, Enrichment)
+- [x] **Phase 5** — IncidentForge Backend Foundation (Steps 1–5 complete: FastAPI, Pydantic, adapter boundary, normalization, normalization tests, SQLite persistence, event-processing lifecycle, audit events)
 - [ ] **Phase 6** — ML Risk Scoring
 - [ ] **Phase 7** — AI-Assisted Investigation
 - [ ] **Phase 8** — SOC Dashboard
