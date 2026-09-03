@@ -37,6 +37,26 @@ class Alert(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class Correlation(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    correlation_id: str = Field(index=True, unique=True, max_length=256)
+    correlation_type: str = Field(index=True, max_length=128)
+    entity_key: str = Field(index=True, max_length=256)
+    title: str = Field(max_length=256)
+    description: str
+    severity: int
+    status: str = Field(default="open", max_length=32)
+    first_seen: datetime
+    last_seen: datetime
+    alert_ids_json: str = "[]"
+    event_ids_json: str = "[]"
+    alert_count: int = 0
+    mitre_techniques_json: str = "[]"
+    evidence_json: str = "{}"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class Incident(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     incident_id: str = Field(index=True, unique=True, max_length=256)
@@ -46,8 +66,52 @@ class Incident(SQLModel, table=True):
     status: str = Field(default="open", max_length=32)
     created_at: datetime
     updated_at: datetime
+    first_seen: datetime | None = None
+    last_seen: datetime | None = None
+    correlation_ids_json: str = "[]"
     alert_ids_json: str = "[]"
+    event_ids_json: str = "[]"
+    mitre_techniques_json: str = "[]"
+    evidence_json: str = "{}"
     tags_json: str = "[]"
+
+
+class RiskAssessment(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    assessment_id: str = Field(index=True, unique=True, max_length=256)
+    incident_id: str = Field(index=True, max_length=256)
+    risk_score: int
+    risk_level: str = Field(max_length=32)
+    model_name: str = Field(max_length=128)
+    model_version: str = Field(max_length=64)
+    feature_version: str = Field(max_length=64)
+    scored_at: datetime
+    features_json: str = "{}"
+    reasons_json: str = "[]"
+    feature_contributions_json: str = "{}"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ThreatIntelEnrichment(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    enrichment_id: str = Field(index=True, unique=True, max_length=256)
+    incident_id: str = Field(index=True, max_length=256)
+    ioc_type: str = Field(index=True, max_length=32)
+    ioc_value: str = Field(index=True, max_length=2048)
+    classification: str = Field(max_length=32)
+    confidence: int
+    reputation: str = Field(max_length=64)
+    threat_category: str = Field(default="", max_length=128)
+    provider: str = Field(max_length=128)
+    source_count: int = 0
+    first_seen: datetime | None = None
+    last_seen: datetime | None = None
+    tags_json: str = "[]"
+    explanation: str = ""
+    lookup_timestamp: datetime | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Investigation(SQLModel, table=True):

@@ -1,7 +1,6 @@
-"""Incident/case model."""
-
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,5 +22,11 @@ class Incident(BaseModel):
     status: IncidentStatus = IncidentStatus.OPEN
     created_at: datetime
     updated_at: datetime
+    correlation_ids: list[str] = Field(default_factory=list)
     alert_ids: list[str] = Field(default_factory=list)
+    event_ids: list[str] = Field(default_factory=list)
+    first_seen: datetime | None = None
+    last_seen: datetime | None = None
+    mitre_techniques: list[str] = Field(default_factory=list)
+    evidence: dict[str, Any] = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list)

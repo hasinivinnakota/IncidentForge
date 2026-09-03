@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from .api.routes import events, health
+from .api.routes import alerts, correlations, events, health, incidents, risk, threat_intel
 from .config import get_settings
 from .database import get_session, init_db
 
@@ -27,10 +27,14 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title=settings.application_name, version="0.1.0", lifespan=lifespan)
 app.include_router(health.router)
 app.include_router(events.router)
+app.include_router(alerts.router)
+app.include_router(correlations.router)
+app.include_router(incidents.router)
+app.include_router(risk.router)
+app.include_router(threat_intel.router)
 
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     logger.warning("Request validation failed", extra={"path": request.url.path, "error_count": len(exc.errors())})
     return JSONResponse(status_code=422, content={"detail": exc.errors()})
-

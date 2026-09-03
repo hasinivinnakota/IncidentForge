@@ -1,7 +1,7 @@
 # IncidentForge — Architecture Document
 
 **Last Updated:** 2026-09-03
-**Status:** Approved (Phase 5 Backend Foundation complete)
+**Status:** Approved (Phase 5 Backend Foundation complete; Checkpoints 6.1–6.4 implemented)
 
 ---
 
@@ -297,3 +297,125 @@ The Wazuh → Filebeat → OpenSearch `_type` metadata limitation documented in 
 ### 10.5 Future Persistence Evolution
 
 SQLite is used as the current development persistence layer. A future migration to a production-grade store (for example PostgreSQL or a managed cloud database) is part of the planned evolution of the persistence layer, not part of "future database persistence," which is already implemented.
+
+---
+
+## 11. Phase 6 Detection & Correlation Pipeline
+
+The Phase 6 pipeline extends the backend with rule-based detection (Checkpoint 6.1) and alert correlation (Checkpoint 6.2) sitting upstream of incident creation.
+
+### 11.1 Detection Engine (Checkpoint 6.1)
+
+- **`DetectionRule` (ABC)**: Abstract interface for detection rules evaluated against `NormalizedEvent`.
+- **`DetectionEngine`**: Stateless service matching events against registered detection rules.
+- **Built-in Rules**: `builtin-001` (High Severity), `builtin-002` (Suspicious Process), `builtin-003` (Authentication Failure), `builtin-004` (Network Connection Anomaly), `builtin-005` (Privilege Escalation Indicator).
+- **`AlertService`**: Generates deterministic `alert_id` values (`alert-SHA256(event_id:rule_id)[:16]`) and records audit trails.
+- **`AlertRepository`**: Manages SQLite persistence for alerts.
+
+### 11.2 Correlation Engine (Checkpoint 6.2)
+
+- **`CorrelationRule` (ABC)**: Extensible interface inspecting incoming `CorrelatableAlert` instances against a bounded historical window.
+- **Built-in Rules**:
+  - `AuthenticationAttackSequenceRule` (`corr-rule-001`): Multiple authentication failures against same user/source IP within 15-minute window.
+  - `ProcessNetworkSequenceRule` (`corr-rule-002`): Suspicious process execution followed by a network connection on the same host within 30-minute window.
+  - `PrivilegeEscalationSequenceRule` (`corr-rule-003`): Suspicious process or authentication activity coupled with privilege escalation on the same host/user within 30-minute window.
+  - `SameEntityCorrelationRule` (`corr-rule-004`): Multiple distinct security alerts observed on the same host or user within 30-minute window.
+- **`CorrelationEngine`**: Stateful lifecycle manager matching alerts, generating deterministic `correlation_id` values (`corr-SHA256(type:entity:founding_alert)[:16]`), creating/updating open correlations, and logging audit records.
+- **`CorrelationRepository`**: Manages SQLite persistence for correlated security activities (`Correlation` table).
+
+### 11.3 Incident Creation (Checkpoint 6.3)
+
+- **`IncidentService`**: Creates or updates `Incident` records from correlated security activity. One active incident per correlation (idempotent).
+  - **Deterministic Incident ID**: `inc-SHA256("incident:" + correlation_id)[:16]`.
+  - **Severity**: Derived directly from `Correlation.severity`, clamped to `[0, 15]`. Kept separate from future ML risk scoring.
+  - **Summary/Description**: Deterministic structured text from correlation type, entity, alert count, time range, MITRE techniques, and severity. No LLM or AI.
+  - **Evidence**: Bounded dictionary with only operational fields (`correlation_type`, `entity_key`, `alert_count`). No credentials, tokens, passwords, API keys, or unrestricted raw metadata.
+  - **Audit Trail**: `incident.created`, `incident.updated`, `incident.duplicate`, `incident.status_updated` events via `EventRepository.create_audit_event`.
+- **`IncidentRepository`**: Manages SQLite persistence for incidents (`Incident` table with `correlation_ids_json`, `alert_ids_json`, `event_ids_json`, `mitre_techniques_json`, `evidence_json`, `first_seen`, `last_seen`).
+- **Incident Status Lifecycle**: `open` → `investigating` → `resolved` → `closed` (SOC standard).
+- **API Endpoints**:
+  - `GET /api/v1/incidents` — List with filters (`status`, `correlation_id`, `severity`, `limit`).
+  - `GET /api/v1/incidents/{incident_id}` — Retrieve by ID (404 if not found).
+  - `PATCH /api/v1/incidents/{incident_id}/status` — Status update with audit trail.
+
+### 11.4 ML Risk Scoring (Checkpoint 6.4)
+
+- **`RiskScoringService`**: Enriches `Incident` records with an ML-computed risk assessment following incident creation.
+  - **Architectural Isolation**:
+    $$\text{Detection Rule Severity} \ne \text{Incident Severity} \ne \text{ML Risk Score} \ne \text{Future AI Investigation}$$
+    The ML risk score enriches the incident but **never** modifies or overwrites the incident's original severity.
+  - **Risk Scale & Levels**:
+    - `risk_score`: 0–100 integer.
+    - `risk_level`: `low` (0–24), `medium` (25–49), `high` (50–74), `critical` (75–100).
+  - **Feature Extraction (`v1.0`)**: 12 deterministic, bounded numeric features:
+    1. `incident_severity` [0–15]
+    2. `correlation_severity` [0–15]
+    3. `alert_count`
+    4. `event_count`
+    5. `correlation_count`
+    6. `mitre_count`
+    7. `has_auth_attack` (0 or 1)
+    8. `has_suspicious_process` (0 or 1)
+    9. `has_network_activity` (0 or 1)
+    10. `has_privilege_escalation` (0 or 1)
+    11. `time_span_seconds` (>= 0)
+    12. `entity_diversity` (distinct tags/entities)
+    *Strict Security Guarantee*: Excludes passwords, tokens, API keys, credentials, and unrestricted raw metadata.
+  - **Baseline Model (`baseline_logistic_regression`, `v1.0`)**:
+    - Calibrated logistic regression scoring with sigmoid probability mapping.
+    - Zero-dependency runtime fallback with exact standardization, coefficients, and intercept.
+    - Persisted artifact: `backend/app/ml/artifacts/model_metadata_v1.json`.
+  - **Explainability**: Deterministic reason codes based on feature contributions (`AUTHENTICATION_ATTACK`, `PRIVILEGE_ESCALATION`, `SUSPICIOUS_PROCESS_ACTIVITY`, `NETWORK_ACTIVITY`, `MULTIPLE_MITRE_TECHNIQUES`, `HIGH_ALERT_VOLUME`, `HIGH_CORRELATION_SEVERITY`, `HIGH_INCIDENT_SEVERITY`).
+  - **Dataset Note**: Current training data is synthetic development data for development/testing only; it does not represent production accuracy.
+  - **Persistence & API**:
+    - `RiskAssessment` SQLModel table and `RiskAssessmentRepository`.
+    - `GET /api/v1/incidents/{incident_id}/risk`
+    - `GET /api/v1/risk-assessments/{assessment_id}`
+
+### 11.5 Threat Intelligence Enrichment (Checkpoint 6.5 / Phase 7)
+
+- **`IOCExtractor`**: Safely extracts Indicators of Compromise (IOCs) from structured evidence.
+  - **Supported Types**: IPv4, IPv6, Domain, URL, SHA256, SHA1, MD5.
+  - **Security Guarantee**: Excludes passwords, API keys, credentials, and tokens using regex boundaries.
+  - **Normalization**: Standardizes formats (e.g., uppercasing hashes, lowercasing domains) and deduplicates.
+- **`ThreatIntelProvider` (ABC)**: Abstract interface for TI lookups.
+  - **`LocalDevThreatIntelProvider`**: Deterministic synthetic data provider used for development (no external network calls). Uses RFC 5737 and `.example` TLDs.
+- **`ThreatIntelligenceService`**: Orchestrates extraction and enrichment.
+  - **Idempotency**: Uses deterministic enrichment IDs: `ti-SHA256(incident_id:ioc_normalized)[:16]`.
+  - **Architectural Isolation**: Never modifies incident severity or ML risk scores.
+  - **Audit Trail**: `threat_intelligence.enrichment_created`, `threat_intelligence.enrichment_updated` events.
+- **Persistence & API**:
+  - `ThreatIntelEnrichment` SQLModel table and `ThreatIntelRepository`.
+  - `GET /api/v1/incidents/{incident_id}/threat-intelligence`
+  - `GET /api/v1/threat-intelligence/{enrichment_id}`
+  - `GET /api/v1/threat-intelligence/ioc/{ioc_type}/{ioc_value}`
+
+### 11.6 Pipeline Flow
+
+```
+NormalizedEvent
+      │
+      ▼
+EventProcessingService (persist Event + Audit)
+      │
+      ▼ (if newly persisted)
+DetectionEngine (evaluate rules)
+      │
+      ▼ (if matches found)
+AlertService (persist Alert + Audit)
+      │
+      ▼ (if alerts generated)
+CorrelationEngine (correlate alerts within bounded window)
+      │
+      ▼ (if correlations created/updated)
+IncidentService (create/update Incident + Audit)
+      │
+      ▼ (if incidents created/updated)
+RiskScoringService (ML risk score + level + explainability + Audit)
+      │
+      ▼ (if incidents created/updated)
+ThreatIntelligenceService (IOC extraction + synthetic provider lookup + Audit)
+      │
+      ▼
+persisted / updated ThreatIntelEnrichment + Audit
+```
