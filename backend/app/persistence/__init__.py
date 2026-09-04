@@ -29,6 +29,8 @@ from .repositories import (
     InvestigationWriteResult,
     RiskAssessmentRepository,
     RiskAssessmentWriteResult,
+    ResponseActionRepository,
+    ResponseActionWriteResult,
     ThreatIntelRepository,
     ThreatIntelWriteResult,
 )
@@ -56,6 +58,8 @@ __all__ = [
     "InvestigationRepository",
     "InvestigationWriteResult",
     "ResponseAction",
+    "ResponseActionRepository",
+    "ResponseActionWriteResult",
     "RiskAssessment",
     "RiskAssessmentRepository",
     "RiskAssessmentWriteResult",

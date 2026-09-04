@@ -15,6 +15,7 @@ from ..models.correlation import Correlation as DomainCorrelation
 from ..models.events import NormalizedEvent
 from ..models.incidents import Incident as DomainIncident
 from ..models.investigation import InvestigationResult as DomainInvestigationResult
+from ..models.response import ResponseAction as DomainResponseAction
 from ..models.risk import RiskAssessment as DomainRiskAssessment
 from ..models.threat_intel import ThreatIntelResult as DomainThreatIntelResult
 from .models import (
@@ -27,6 +28,7 @@ from .models import (
     EvidenceReferenceRecord as PersistenceEvidenceReferenceRecord,
     Incident as PersistenceIncident,
     Investigation as PersistenceInvestigation,
+    ResponseAction as PersistenceResponseAction,
     RiskAssessment as PersistenceRiskAssessment,
     ThreatIntelEnrichment as PersistenceThreatIntelEnrichment,
 )
@@ -818,3 +820,79 @@ class CaseRepository:
             .order_by(PersistenceEvidenceReferenceRecord.added_at.asc())
             .limit(limit)
         ).all()
+
+
+@dataclass(frozen=True)
+class ResponseActionWriteResult:
+    response_action: PersistenceResponseAction
+    created: bool
+
+
+class ResponseActionRepository:
+    def __init__(self, session: Session):
+        self.session = session
+
+    def create_response_action(self, action: DomainResponseAction) -> ResponseActionWriteResult:
+        existing = self.get_response_action(action.action_id)
+        if existing is not None:
+            return ResponseActionWriteResult(response_action=existing, created=False)
+
+        status_val = (
+            action.status.value
+            if hasattr(action.status, "value")
+            else str(action.status)
+        )
+        record = PersistenceResponseAction(
+            action_id=action.action_id,
+            incident_id=action.incident_id,
+            action_type=action.action_type,
+            status=status_val,
+            requested_at=action.requested_at,
+            approved_by=action.approved_by,
+            executed_at=action.executed_at,
+            result=action.result,
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+        return ResponseActionWriteResult(response_action=record, created=True)
+
+    def get_response_action(self, action_id: str) -> PersistenceResponseAction | None:
+        return self.session.exec(
+            select(PersistenceResponseAction).where(
+                PersistenceResponseAction.action_id == action_id
+            )
+        ).first()
+
+    def update_response_action(
+        self, action: DomainResponseAction
+    ) -> PersistenceResponseAction | None:
+        record = self.get_response_action(action.action_id)
+        if record is None:
+            return None
+
+        status_val = (
+            action.status.value
+            if hasattr(action.status, "value")
+            else str(action.status)
+        )
+        record.status = status_val
+        record.approved_by = action.approved_by
+        record.executed_at = action.executed_at
+        record.result = action.result
+
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+        return record
+
+    def list_response_actions(
+        self,
+        incident_id: str | None = None,
+        limit: int = 100,
+    ) -> Sequence[PersistenceResponseAction]:
+        statement = select(PersistenceResponseAction)
+        if incident_id is not None:
+            statement = statement.where(PersistenceResponseAction.incident_id == incident_id)
+        statement = statement.order_by(PersistenceResponseAction.requested_at.desc()).limit(limit)
+        return self.session.exec(statement).all()

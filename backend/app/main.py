@@ -15,6 +15,7 @@ from .api.routes import (
     health,
     incidents,
     investigations,
+    response,
     risk,
     threat_intel,
 )
@@ -44,6 +45,7 @@ app.include_router(risk.router)
 app.include_router(threat_intel.router)
 app.include_router(investigations.router)
 app.include_router(cases.router)
+app.include_router(response.router)
 
 
 @app.exception_handler(RequestValidationError)

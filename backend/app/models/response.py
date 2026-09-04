@@ -14,6 +14,21 @@ class ResponseActionStatus(str, Enum):
     REJECTED = "rejected"
 
 
+class ResponseActionType(str, Enum):
+    ISOLATE_ENDPOINT = "isolate_endpoint"
+    QUARANTINE_FILE = "quarantine_file"
+    REVOKE_CREDENTIALS = "revoke_credentials"
+
+
+ALLOWED_ACTION_TYPES = frozenset(
+    {
+        ResponseActionType.ISOLATE_ENDPOINT.value,
+        ResponseActionType.QUARANTINE_FILE.value,
+        ResponseActionType.REVOKE_CREDENTIALS.value,
+    }
+)
+
+
 class ResponseAction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

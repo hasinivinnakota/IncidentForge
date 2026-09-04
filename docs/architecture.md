@@ -559,7 +559,72 @@ Every case lifecycle event generates a corresponding immutable audit event:
 
 ### 14.8 Deferred Items
 
-- **Phase 10**: Execution of active response actions (containment, firewall blocks, account lockout).
 - **Phase 11**: Interactive SOC web console and dashboard.
 - **Phase 12**: RBAC, JWT tokens, and multi-tenant authentication.
 - **Phase 14**: External ticketing webhooks (Jira, ServiceNow, TheHive).
+
+---
+
+## 15. Controlled Response Architecture (Phase 10)
+
+### 15.1 Defensive Principles & Safety Guarantees
+
+IncidentForge strictly operates as a defensive, safe SOC platform.
+
+All response execution in this phase is **simulation-only**. Under no circumstances will any live host, network interface, file system, credential, directory service, or cloud API be modified or interrupted:
+- **No host or network changes**: The system never isolates real machines, configures firewalls, or alters routing tables.
+- **No filesystem modifications**: The system never deletes, moves, or alters files on any endpoint.
+- **No account / identity changes**: The system never disables real accounts, changes passwords, or revokes live authentication tokens.
+- **No subshell or external API calls**: Response execution is purely local, deterministic simulation without subprocess execution or external network calls.
+- **AI is strictly advisory**: AI investigator recommendations are informational and proposed-only; the AI agent cannot approve or execute response actions.
+
+### 15.2 Response State Machine & Analyst Control
+
+Response actions follow a strict state machine requiring explicit human-in-the-loop analyst intervention:
+
+```
+          ┌─────────────┐
+          │  PROPOSED   │
+          └──────┬──────┘
+                 │
+       ┌─────────┴─────────┐
+       ▼                   ▼
+┌─────────────┐     ┌─────────────┐
+│  APPROVED   │     │  REJECTED   │ (terminal)
+└──────┬──────┘     └─────────────┘
+       │
+ ┌─────┴─────┐
+ ▼           ▼
+┌───────────┐ ┌────────┐
+│ EXECUTED  │ │ FAILED │ (terminal)
+└───────────┘ └────────┘
+```
+
+- **Approval Gate**: Execution (`POST /api/v1/response-actions/{id}/execute`) strictly requires `status == APPROVED`. Attempting to execute proposed, rejected, or executed actions fails with HTTP 409 Conflict.
+- **Terminal States**: `EXECUTED`, `FAILED`, and `REJECTED` cannot be transitioned or re-executed.
+
+### 15.3 Allowlisted Simulated Actions
+
+Actions are restricted to an explicit allowlist:
+1. `isolate_endpoint`: Simulates endpoint network containment.
+2. `quarantine_file`: Simulates suspicious binary isolation.
+3. `revoke_credentials`: Simulates account session invalidation and credential reset.
+
+### 15.4 Auditing & Credential Redaction
+
+- Every lifecycle change generates an immutable `AuditEvent`:
+  - `response_action.proposed`
+  - `response_action.approved`
+  - `response_action.rejected`
+  - `response_action.execution_started` (`simulation_only: True`)
+  - `response_action.executed` (`simulation_only: True`)
+- Rejection reasons, actor names, and results are sanitized and redacted for sensitive tokens, passwords, session cookies, and API keys before persistence and auditing.
+
+### 15.5 API Endpoints
+
+- `POST /api/v1/incidents/{incident_id}/response-actions` — Create proposed action (HTTP 201)
+- `GET /api/v1/incidents/{incident_id}/response-actions` — List actions for an incident (HTTP 200)
+- `GET /api/v1/response-actions/{action_id}` — Retrieve response action by ID (HTTP 200)
+- `POST /api/v1/response-actions/{action_id}/approve` — Analyst approves action (HTTP 200)
+- `POST /api/v1/response-actions/{action_id}/reject` — Analyst rejects action with reason (HTTP 200)
+- `POST /api/v1/response-actions/{action_id}/execute` — Run safe deterministic simulation (HTTP 200)

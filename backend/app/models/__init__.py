@@ -23,7 +23,7 @@ from .investigation import (
     TimelineItem,
 )
 from .processing import EventProcessingResult, PersistenceStatus, PipelineResult, ProcessingStatus
-from .response import ResponseAction, ResponseActionStatus
+from .response import ResponseAction, ResponseActionStatus, ResponseActionType
 from .risk import RiskAssessment, RiskLevel
 from .rules import DetectionMatch, DetectionRule
 from .threat_intel import IOC, IOCType, ThreatClassification, ThreatIntelResult
@@ -61,6 +61,7 @@ __all__ = [
     "RecommendedAction",
     "ResponseAction",
     "ResponseActionStatus",
+    "ResponseActionType",
     "RiskAssessment",
     "RiskLevel",
     "ThreatClassification",
