@@ -965,3 +965,99 @@ def test_get_threat_intelligence_by_ioc(api_client) -> None:
     results = resp.json()
     assert len(results) >= 1
     assert all(r["ioc_type"] == "ipv4" and r["ioc_value"] == "192.0.2.1" for r in results)
+
+
+# =====================================================================
+# Phase 8: AI Investigator API Tests
+# =====================================================================
+
+
+def _create_test_incident(api_client, user_suffix: str) -> str:
+    """Helper to create a correlated incident through the events API."""
+    api_client.post(
+        "/api/v1/events",
+        json={
+            "event_id": f"inv-evt-1-{user_suffix}",
+            "timestamp": "2026-11-01T00:00:00Z",
+            "source": "auth_service",
+            "event_type": "authentication_failure",
+            "severity": 6,
+            "message": f"Brute force attempt 1 for {user_suffix}",
+            "user": f"inv_user_{user_suffix}",
+            "source_ip": "203.0.113.50",
+        },
+    )
+    r2 = api_client.post(
+        "/api/v1/events",
+        json={
+            "event_id": f"inv-evt-2-{user_suffix}",
+            "timestamp": "2026-11-01T00:02:00Z",
+            "source": "auth_service",
+            "event_type": "authentication_failure",
+            "severity": 6,
+            "message": f"Brute force attempt 2 for {user_suffix}",
+            "user": f"inv_user_{user_suffix}",
+            "source_ip": "203.0.113.50",
+        },
+    )
+    incidents = r2.json()["incidents_created"]
+    assert len(incidents) >= 1
+    return incidents[0]
+
+
+def test_trigger_investigation_on_incident(api_client) -> None:
+    """POST /api/v1/incidents/{id}/investigate triggers AI investigation."""
+    inc_id = _create_test_incident(api_client, "trig")
+
+    resp = api_client.post(f"/api/v1/incidents/{inc_id}/investigate", json={"force": False})
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["incident_id"] == inc_id
+    assert body["investigation_id"].startswith("inv-")
+    assert body["provider"] == "local_dev"
+    assert body["model_name"] == "heuristic_deterministic_v1"
+    assert len(body["findings"]) >= 1
+    assert len(body["possible_response_actions"]) >= 1
+    assert all(a["analyst_approval_required"] is True for a in body["possible_response_actions"])
+    assert 0.0 <= body["confidence"] <= 1.0
+
+
+def test_trigger_investigation_not_found(api_client) -> None:
+    """POST /api/v1/incidents/{id}/investigate returns 404 for missing incident."""
+    resp = api_client.post("/api/v1/incidents/inc-nonexistent/investigate", json={"force": False})
+    assert resp.status_code == 404
+
+
+def test_get_incident_investigation(api_client) -> None:
+    """GET /api/v1/incidents/{id}/investigation returns the generated investigation."""
+    inc_id = _create_test_incident(api_client, "get_inv")
+
+    # Before investigation is run, returns 404
+    resp_before = api_client.get(f"/api/v1/incidents/{inc_id}/investigation")
+    assert resp_before.status_code == 404
+
+    # Run investigation
+    api_client.post(f"/api/v1/incidents/{inc_id}/investigate", json={"force": False})
+
+    # Now GET returns it
+    resp_after = api_client.get(f"/api/v1/incidents/{inc_id}/investigation")
+    assert resp_after.status_code == 200
+    assert resp_after.json()["incident_id"] == inc_id
+
+
+def test_get_investigation_by_id(api_client) -> None:
+    """GET /api/v1/investigations/{inv_id} returns the investigation."""
+    inc_id = _create_test_incident(api_client, "by_id")
+    r = api_client.post(f"/api/v1/incidents/{inc_id}/investigate", json={"force": False})
+    inv_id = r.json()["investigation_id"]
+
+    resp = api_client.get(f"/api/v1/investigations/{inv_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["investigation_id"] == inv_id
+    assert body["incident_id"] == inc_id
+
+    # Nonexistent ID returns 404
+    resp_missing = api_client.get("/api/v1/investigations/inv-missing-id")
+    assert resp_missing.status_code == 404

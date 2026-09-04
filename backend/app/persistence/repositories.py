@@ -9,6 +9,7 @@ from ..models.alerts import Alert as DomainAlert
 from ..models.correlation import Correlation as DomainCorrelation
 from ..models.events import NormalizedEvent
 from ..models.incidents import Incident as DomainIncident
+from ..models.investigation import InvestigationResult as DomainInvestigationResult
 from ..models.risk import RiskAssessment as DomainRiskAssessment
 from ..models.threat_intel import ThreatIntelResult as DomainThreatIntelResult
 from .models import (
@@ -17,6 +18,7 @@ from .models import (
     Correlation as PersistenceCorrelation,
     Event,
     Incident as PersistenceIncident,
+    Investigation as PersistenceInvestigation,
     RiskAssessment as PersistenceRiskAssessment,
     ThreatIntelEnrichment as PersistenceThreatIntelEnrichment,
 )
@@ -521,5 +523,118 @@ class ThreatIntelRepository:
                 PersistenceThreatIntelEnrichment.ioc_value == ioc_value,
             )
             .order_by(PersistenceThreatIntelEnrichment.created_at.desc())
+            .limit(limit)
+        ).all()
+
+
+@dataclass(frozen=True)
+class InvestigationWriteResult:
+    investigation: PersistenceInvestigation
+    created: bool
+
+
+class InvestigationRepository:
+    def __init__(self, session: Session):
+        self.session = session
+
+    def save_investigation(
+        self, result: DomainInvestigationResult
+    ) -> InvestigationWriteResult:
+        """Persist or update an AI investigation result."""
+        existing = self.get_investigation(result.investigation_id)
+        if existing is not None:
+            existing.summary = result.summary
+            existing.confidence = result.confidence
+            existing.findings_json = json.dumps(
+                [f.model_dump(mode="json") for f in result.findings], sort_keys=True
+            )
+            existing.timeline_json = json.dumps(
+                [t.model_dump(mode="json") for t in result.timeline], sort_keys=True
+            )
+            existing.mitre_techniques_json = json.dumps(
+                result.mitre_techniques, sort_keys=True
+            )
+            existing.threat_intel_summary_json = json.dumps(
+                result.threat_intel_summary, sort_keys=True
+            )
+            existing.investigation_gaps_json = json.dumps(
+                result.investigation_gaps, sort_keys=True
+            )
+            existing.recommended_next_steps_json = json.dumps(
+                result.recommended_next_steps, sort_keys=True
+            )
+            existing.possible_response_actions_json = json.dumps(
+                [a.model_dump(mode="json") for a in result.possible_response_actions],
+                sort_keys=True,
+            )
+            existing.provider = result.provider
+            existing.model_name = result.model_name
+            existing.generated_at = result.generated_at
+            existing.updated_at = datetime.now(timezone.utc)
+            self.session.add(existing)
+            self.session.commit()
+            self.session.refresh(existing)
+            return InvestigationWriteResult(investigation=existing, created=False)
+
+        record = PersistenceInvestigation(
+            investigation_id=result.investigation_id,
+            incident_id=result.incident_id,
+            status="completed",
+            summary=result.summary,
+            confidence=result.confidence,
+            findings_json=json.dumps(
+                [f.model_dump(mode="json") for f in result.findings], sort_keys=True
+            ),
+            timeline_json=json.dumps(
+                [t.model_dump(mode="json") for t in result.timeline], sort_keys=True
+            ),
+            mitre_techniques_json=json.dumps(result.mitre_techniques, sort_keys=True),
+            threat_intel_summary_json=json.dumps(
+                result.threat_intel_summary, sort_keys=True
+            ),
+            investigation_gaps_json=json.dumps(
+                result.investigation_gaps, sort_keys=True
+            ),
+            recommended_next_steps_json=json.dumps(
+                result.recommended_next_steps, sort_keys=True
+            ),
+            possible_response_actions_json=json.dumps(
+                [a.model_dump(mode="json") for a in result.possible_response_actions],
+                sort_keys=True,
+            ),
+            provider=result.provider,
+            model_name=result.model_name,
+            generated_at=result.generated_at,
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+        return InvestigationWriteResult(investigation=record, created=True)
+
+    def get_investigation(
+        self, investigation_id: str
+    ) -> PersistenceInvestigation | None:
+        return self.session.exec(
+            select(PersistenceInvestigation).where(
+                PersistenceInvestigation.investigation_id == investigation_id
+            )
+        ).first()
+
+    def get_latest_for_incident(
+        self, incident_id: str
+    ) -> PersistenceInvestigation | None:
+        return self.session.exec(
+            select(PersistenceInvestigation)
+            .where(PersistenceInvestigation.incident_id == incident_id)
+            .order_by(PersistenceInvestigation.generated_at.desc())
+        ).first()
+
+    def list_by_incident(
+        self, incident_id: str, limit: int = 50
+    ) -> Sequence[PersistenceInvestigation]:
+        return self.session.exec(
+            select(PersistenceInvestigation)
+            .where(PersistenceInvestigation.incident_id == incident_id)
+            .order_by(PersistenceInvestigation.generated_at.desc())
             .limit(limit)
         ).all()

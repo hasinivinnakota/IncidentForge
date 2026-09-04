@@ -5,7 +5,13 @@ from .audit import AuditEvent
 from .correlation import CorrelatableAlert, Correlation, CorrelationMatch, CorrelationStatus
 from .events import NormalizedEvent
 from .incidents import Incident, IncidentStatus
-from .investigation import InvestigationResult
+from .investigation import (
+    FindingItem,
+    FindingType,
+    InvestigationResult,
+    RecommendedAction,
+    TimelineItem,
+)
 from .processing import EventProcessingResult, PersistenceStatus, PipelineResult, ProcessingStatus
 from .response import ResponseAction, ResponseActionStatus
 from .risk import RiskAssessment, RiskLevel
@@ -22,6 +28,8 @@ __all__ = [
     "CorrelationStatus",
     "DetectionMatch",
     "DetectionRule",
+    "FindingItem",
+    "FindingType",
     "IOC",
     "IOCType",
     "Incident",
@@ -32,10 +40,12 @@ __all__ = [
     "PersistenceStatus",
     "PipelineResult",
     "ProcessingStatus",
+    "RecommendedAction",
     "ResponseAction",
     "ResponseActionStatus",
     "RiskAssessment",
     "RiskLevel",
     "ThreatClassification",
     "ThreatIntelResult",
+    "TimelineItem",
 ]

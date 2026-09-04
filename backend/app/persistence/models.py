@@ -118,12 +118,21 @@ class Investigation(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     investigation_id: str = Field(index=True, unique=True, max_length=256)
     incident_id: str = Field(index=True, max_length=256)
-    status: str = Field(default="pending", max_length=32)
+    status: str = Field(default="completed", max_length=32)
     summary: str
-    findings_json: str = "[]"
     confidence: float
-    recommendations_json: str = "[]"
+    findings_json: str = "[]"
+    timeline_json: str = "[]"
+    mitre_techniques_json: str = "[]"
+    threat_intel_summary_json: str = "{}"
+    investigation_gaps_json: str = "[]"
+    recommended_next_steps_json: str = "[]"
+    possible_response_actions_json: str = "[]"
+    provider: str = Field(default="local_dev", max_length=64)
+    model_name: str = Field(default="heuristic_deterministic_v1", max_length=128)
     generated_at: datetime
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ResponseAction(SQLModel, table=True):

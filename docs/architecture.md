@@ -419,3 +419,45 @@ ThreatIntelligenceService (IOC extraction + synthetic provider lookup + Audit)
       ▼
 persisted / updated ThreatIntelEnrichment + Audit
 ```
+
+---
+
+## 13. Phase 8: AI Investigator
+
+### 13.1 Design Principles & Security Guardrails
+
+The AI Investigator operates as an evidence-grounded, advisory-only decision support system for SOC analysts:
+1. **Advisory-Only**: The AI Investigator generates findings, hypothesis analysis, timelines, and response suggestions. It NEVER triggers active containment, remediation, or endpoint code execution.
+2. **Human-in-the-Loop**: All response actions produced have `analyst_approval_required = True` and `inert_proposed_only = True`.
+3. **Immutability of Ground Truth**: The AI layer CANNOT overwrite, re-score, or mutate `Incident.severity` or ML `RiskAssessment.risk_score`.
+4. **Zero-Trust Telemetry Handling**: Raw telemetry strings (command lines, file paths, process names) are sanitized, length-bounded, and redacted of credentials/tokens (`[REDACTED]`) before context assembly.
+5. **Provider-Agnostic Abstraction**: Uses `LLMProvider` ABC enabling zero-cost deterministic mock development (`LocalDevLLMProvider`) without live external cloud API calls or API keys.
+
+### 13.2 Core Components
+
+- **`LLMContext`**: Structured domain payload containing bounded incident metadata, alert summaries, mapped MITRE ATT&CK techniques, risk assessment scores, threat intelligence summaries, and timeline events.
+- **`LLMProvider` (ABC)**:
+  - `investigate(context: LLMContext, investigation_id: str) -> InvestigationResult`
+  - `provider_name: str`
+  - `model_name: str`
+- **`LocalDevLLMProvider`**:
+  - Deterministic implementation deriving structured findings from evidence.
+  - Categorizes findings into:
+    - `OBSERVED`: Grounded facts directly observable in alerts, entities, and threat intelligence.
+    - `INFERRED`: Analytical hypotheses and correlation patterns (e.g. MITRE technique alignment).
+    - `RECOMMENDED`: Immediate analyst attention areas.
+  - Proposes inert containment recommendations (`isolate_endpoint`, `quarantine_file`, `revoke_credentials`).
+  - Estimates investigation confidence based on evidence completeness (0.0 to 1.0).
+- **`AIInvestigatorService`**:
+  - Orchestrates context extraction, sanitization/redaction, LLM provider invocation, persistence, and audit logging.
+  - Deterministic investigation ID: `inv-SHA256("inv:" + incident_id)[:16]`.
+  - Idempotent: Repeated calls without `force=True` return existing records; `force=True` triggers re-investigation.
+  - Emits audit events: `investigation.requested`, `investigation.completed`, `investigation.failed`.
+- **`InvestigationRepository` & `Investigation` SQLModel**:
+  - Stores full structured JSON for findings, timeline, MITRE techniques, threat intelligence summary, investigation gaps, next steps, and proposed response actions.
+
+### 13.3 API Endpoints
+
+- `POST /api/v1/incidents/{incident_id}/investigate` — Trigger or retrieve AI investigation (`force: bool = False`)
+- `GET /api/v1/incidents/{incident_id}/investigation` — Retrieve latest investigation for incident
+- `GET /api/v1/investigations/{investigation_id}` — Retrieve specific investigation by ID

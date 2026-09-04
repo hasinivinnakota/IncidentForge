@@ -7,7 +7,16 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from .api.routes import alerts, correlations, events, health, incidents, risk, threat_intel
+from .api.routes import (
+    alerts,
+    correlations,
+    events,
+    health,
+    incidents,
+    investigations,
+    risk,
+    threat_intel,
+)
 from .config import get_settings
 from .database import get_session, init_db
 
@@ -32,6 +41,7 @@ app.include_router(correlations.router)
 app.include_router(incidents.router)
 app.include_router(risk.router)
 app.include_router(threat_intel.router)
+app.include_router(investigations.router)
 
 
 @app.exception_handler(RequestValidationError)
