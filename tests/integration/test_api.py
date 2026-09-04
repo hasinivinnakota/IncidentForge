@@ -1061,3 +1061,190 @@ def test_get_investigation_by_id(api_client) -> None:
     # Nonexistent ID returns 404
     resp_missing = api_client.get("/api/v1/investigations/inv-missing-id")
     assert resp_missing.status_code == 404
+
+
+# =====================================================================
+# Phase 9: Case Management API Tests
+# =====================================================================
+
+
+def test_create_and_get_standalone_case(api_client) -> None:
+    """POST /api/v1/cases creates standalone case; GET retrieves it."""
+    payload = {
+        "title": "Suspicious Reconnaissance Detected",
+        "description": "Port scanning activity observed from internal host",
+        "severity": 7,
+        "priority": "high",
+        "tags": ["recon", "network"],
+        "actor": "soc_analyst_1",
+    }
+    resp = api_client.post("/api/v1/cases", json=payload)
+    assert resp.status_code == 201
+    body = resp.json()
+
+    assert body["case_id"].startswith("case-")
+    assert body["title"] == "Suspicious Reconnaissance Detected"
+    assert body["severity"] == 7
+    assert body["priority"] == "high"
+    assert body["status"] == "open"
+    assert "recon" in body["tags"]
+    case_id = body["case_id"]
+
+    # Retrieve by ID
+    get_resp = api_client.get(f"/api/v1/cases/{case_id}")
+    assert get_resp.status_code == 200
+    assert get_resp.json()["case_id"] == case_id
+
+
+def test_create_incident_seeded_case_deterministic(api_client) -> None:
+    """POST /api/v1/cases with incident_id creates deterministic case and links incident."""
+    inc_id = _create_test_incident(api_client, "case_seed")
+
+    payload = {
+        "title": f"Case for incident {inc_id}",
+        "description": "Seeded case",
+        "severity": 6,
+        "priority": "medium",
+        "incident_id": inc_id,
+    }
+    resp1 = api_client.post("/api/v1/cases", json=payload)
+    assert resp1.status_code == 201
+    case1 = resp1.json()
+
+    # Re-posting same incident_id returns the existing case (idempotent)
+    resp2 = api_client.post("/api/v1/cases", json=payload)
+    assert resp2.status_code == 201
+    case2 = resp2.json()
+
+    assert case1["case_id"] == case2["case_id"]
+    assert inc_id in case1["incident_ids"]
+    assert any(e["reference_key"] == inc_id for e in case1["evidence_references"])
+
+
+def test_case_patch_and_assign(api_client) -> None:
+    """PATCH updates properties; POST /assign assigns case."""
+    create_resp = api_client.post(
+        "/api/v1/cases",
+        json={
+            "title": "Initial Title",
+            "description": "Initial Desc",
+            "severity": 5,
+            "priority": "low",
+        },
+    )
+    case_id = create_resp.json()["case_id"]
+
+    # PATCH
+    patch_resp = api_client.patch(
+        f"/api/v1/cases/{case_id}",
+        json={"title": "Updated Case Title", "priority": "critical"},
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["title"] == "Updated Case Title"
+    assert patch_resp.json()["priority"] == "critical"
+
+    # Assign
+    assign_resp = api_client.post(
+        f"/api/v1/cases/{case_id}/assign",
+        json={"assignee": "analyst_bob", "actor": "manager"},
+    )
+    assert assign_resp.status_code == 200
+    assert assign_resp.json()["assignee"] == "analyst_bob"
+
+
+def test_case_lifecycle_and_resolution_flow(api_client) -> None:
+    """Full lifecycle: OPEN -> IN_PROGRESS -> PENDING -> IN_PROGRESS -> RESOLVED -> CLOSED."""
+    create_resp = api_client.post(
+        "/api/v1/cases",
+        json={"title": "Lifecycle Test", "description": "Flow", "severity": 6},
+    )
+    case_id = create_resp.json()["case_id"]
+
+    # 1. Invalid jump: OPEN -> RESOLVED (rejected 400)
+    invalid_resp = api_client.post(
+        f"/api/v1/cases/{case_id}/status",
+        json={"new_status": "resolved"},
+    )
+    assert invalid_resp.status_code == 400
+
+    # 2. OPEN -> IN_PROGRESS
+    r_inp = api_client.post(
+        f"/api/v1/cases/{case_id}/status",
+        json={"new_status": "in_progress"},
+    )
+    assert r_inp.status_code == 200
+    assert r_inp.json()["status"] == "in_progress"
+
+    # 3. Cannot close directly from IN_PROGRESS without resolution (rejected 400)
+    r_bad_close = api_client.post(
+        f"/api/v1/cases/{case_id}/status",
+        json={"new_status": "closed"},
+    )
+    assert r_bad_close.status_code == 400
+
+    # 4. IN_PROGRESS -> RESOLVE (POST /resolve)
+    r_res = api_client.post(
+        f"/api/v1/cases/{case_id}/resolve",
+        json={
+            "summary": "Root cause identified as outdated software; patch applied.",
+            "root_cause": "Vulnerable service version",
+            "action_taken": "Patched service and confirmed healthy",
+            "resolver": "senior_analyst",
+        },
+    )
+    assert r_res.status_code == 200
+    assert r_res.json()["status"] == "resolved"
+    assert r_res.json()["resolution"]["resolved_by"] == "senior_analyst"
+
+    # 5. RESOLVED -> CLOSED
+    r_close = api_client.post(
+        f"/api/v1/cases/{case_id}/status",
+        json={"new_status": "closed"},
+    )
+    assert r_close.status_code == 200
+    assert r_close.json()["status"] == "closed"
+
+
+def test_case_notes_and_timeline_endpoints(api_client) -> None:
+    """Notes are append-only; timeline reconstructs history from audit trail."""
+    create_resp = api_client.post(
+        "/api/v1/cases",
+        json={"title": "Notes & Timeline Case", "description": "Desc", "severity": 4},
+    )
+    case_id = create_resp.json()["case_id"]
+
+    # Add Note
+    note_resp = api_client.post(
+        f"/api/v1/cases/{case_id}/notes",
+        json={"content": "Completed firewall rule audit for host", "author": "alice"},
+    )
+    assert note_resp.status_code == 201
+    assert note_resp.json()["author"] == "alice"
+
+    # List Notes
+    notes_list_resp = api_client.get(f"/api/v1/cases/{case_id}/notes")
+    assert notes_list_resp.status_code == 200
+    assert len(notes_list_resp.json()) == 1
+
+    # Link Evidence
+    ev_resp = api_client.post(
+        f"/api/v1/cases/{case_id}/evidence",
+        json={
+            "evidence_type": "alert",
+            "reference_key": "alt-test-999",
+            "description": "Correlated alert",
+            "added_by": "alice",
+        },
+    )
+    assert ev_resp.status_code == 201
+    assert ev_resp.json()["reference_key"] == "alt-test-999"
+
+    # Get Timeline
+    timeline_resp = api_client.get(f"/api/v1/cases/{case_id}/timeline")
+    assert timeline_resp.status_code == 200
+    timeline = timeline_resp.json()
+    assert len(timeline) >= 3  # created, note_added, evidence_linked
+    actions = [t["action"] for t in timeline]
+    assert "case.created" in actions
+    assert "case.note_added" in actions
+    assert "case.evidence_linked" in actions

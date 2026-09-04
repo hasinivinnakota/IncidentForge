@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from .api.routes import (
     alerts,
+    cases,
     correlations,
     events,
     health,
@@ -42,6 +43,7 @@ app.include_router(incidents.router)
 app.include_router(risk.router)
 app.include_router(threat_intel.router)
 app.include_router(investigations.router)
+app.include_router(cases.router)
 
 
 @app.exception_handler(RequestValidationError)

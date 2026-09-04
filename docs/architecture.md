@@ -461,3 +461,105 @@ The AI Investigator operates as an evidence-grounded, advisory-only decision sup
 - `POST /api/v1/incidents/{incident_id}/investigate` — Trigger or retrieve AI investigation (`force: bool = False`)
 - `GET /api/v1/incidents/{incident_id}/investigation` — Retrieve latest investigation for incident
 - `GET /api/v1/investigations/{investigation_id}` — Retrieve specific investigation by ID
+
+---
+
+## 14. Phase 9: SOC Case Management
+
+### 14.1 Purpose & Separation of Concerns
+
+Case Management represents the human operational layer of IncidentForge, positioned downstream of the detection, correlation, incident creation, ML risk scoring, threat intelligence enrichment, and AI investigation stages:
+- **Incident vs. Case Distinction**:
+  - An **Incident** is an automated, machine-correlated cluster of alerts and security events sharing an entity or attack signature.
+  - A **Case** is a human-governed operational record managed by SOC analysts to coordinate investigation, track hypotheses, record notes, link multi-source evidence, and achieve audited resolution.
+- **Aggregation**: A single Case may contain multiple Incident IDs (e.g., related incidents spanning multiple hosts or lateral movement stages).
+- **Evidence Referencing**: Cases store lightweight, strongly typed reference pointers (`evidence_type`, `reference_key`, `description`, `added_by`, `added_at`) rather than duplicating bulky telemetry payloads.
+
+### 14.2 AI Advisory Isolation & Immutability Guarantees
+
+1. **Advisory Isolation**: AI investigations and suggestions remain strictly advisory. AI cannot close cases, modify case priority, approve response actions, or transition case statuses.
+2. **ML Risk & Telemetry Immutability**: Managing, updating, or resolving a case does not overwrite `Incident.severity`, ML `RiskAssessment.risk_score`, `Alert`, or `Event` telemetry.
+3. **Analyst Attribution**: All state transitions, assignments, resolutions, notes, and evidence links require actor attribution that is permanently recorded in the audit trail.
+4. **Secret Redaction**: Analyst-provided titles, descriptions, and notes are automatically sanitized using regex pattern matching (`[REDACTED]`) to strip passwords, tokens, API keys, and credentials before persistence.
+
+### 14.3 Case Lifecycle State Machine
+
+Cases adhere to a strict finite state machine with deterministic transitions:
+
+```
+      ┌────────────────────────┐
+      │          OPEN          │
+      └───────────┬────────────┘
+                  │ (start work)
+                  ▼
+      ┌────────────────────────┐◄──────────┐ (reopen)
+      │      IN_PROGRESS       │           │
+      └───┬───────────────▲────┴───────┐   │
+          │ (need info)   │            │   │
+          ▼               │ (resume)   │   │
+      ┌───────────────────┴────┐       │   │
+      │        PENDING         │       │   │
+      └───┬────────────────────┘       │   │
+          │ (resolve)                  │ (resolve)
+          ▼                            │   │
+      ┌────────────────────────────────▼───┴┐
+      │              RESOLVED               │
+      └───────────────────┬─────────────────┘
+                          │ (close)
+                          ▼
+      ┌─────────────────────────────────────┐
+      │               CLOSED                │
+      └─────────────────────────────────────┘
+```
+
+- **Allowed Transitions**:
+  - `OPEN` → `IN_PROGRESS`
+  - `IN_PROGRESS` → `PENDING`, `RESOLVED`, `OPEN`
+  - `PENDING` → `IN_PROGRESS`, `RESOLVED`
+  - `RESOLVED` → `CLOSED`, `IN_PROGRESS`
+  - `CLOSED` → `IN_PROGRESS`
+- **Enforced Constraints**:
+  - Direct transitions from `OPEN` to `RESOLVED` or `CLOSED` are rejected (HTTP 400).
+  - Resolving a case requires an explicit resolution summary (`POST /api/v1/cases/{id}/resolve`).
+  - Closing a case requires that it has already been resolved.
+
+### 14.4 Normalized Persistence Schema
+
+To ensure scalability and performance, case notes and evidence references are stored in dedicated normalized tables rather than nested JSON in the `Case` row:
+- **`Case` table**: Core metadata, status, priority, severity, assignee, timestamps, and JSON-encoded lists of linked IDs (`incident_ids_json`, `investigation_ids_json`, `tags_json`) and structured `resolution_json`.
+- **`CaseNoteRecord` table**: Append-only analyst notes (`note_id`, `case_id`, `author`, `content`, `created_at`, `updated_at`).
+- **`EvidenceReferenceRecord` table**: Deduplicated evidence references (`evidence_id`, `case_id`, `evidence_type`, `reference_key`, `description`, `added_by`, `added_at`).
+
+### 14.5 Deterministic & Collision-Safe Identifiers
+
+- **Incident-Seeded Cases**: `case-SHA256("case:" + incident_id)[:16]` guarantees idempotent case creation when seeding from an incident.
+- **Standalone Cases**: `case-UUID4[:16]` provides collision safety for manual threat-hunting cases.
+- **Notes**: `note-UUID4[:16]`.
+- **Evidence References**: `evref-SHA256(case_id + ":" + evidence_type + ":" + reference_key)[:16]`.
+
+### 14.6 Audit Trail & Timeline
+
+Every case lifecycle event generates a corresponding immutable audit event:
+- `case.created`, `case.updated`, `case.assigned`, `case.status_changed`, `case.incident_linked`, `case.investigation_linked`, `case.evidence_linked`, `case.note_added`, `case.resolved`, `case.closed`.
+- Chronological case timeline (`GET /api/v1/cases/{case_id}/timeline`) is dynamically derived from these audit records, avoiding duplicate or desynchronized timeline stores.
+
+### 14.7 API Endpoints
+
+- `POST /api/v1/cases` — Create case (standalone or incident-seeded)
+- `GET /api/v1/cases` — List cases with filtering (`status`, `priority`, `assignee`, `limit`)
+- `GET /api/v1/cases/{case_id}` — Retrieve case details
+- `PATCH /api/v1/cases/{case_id}` — Update general case properties
+- `POST /api/v1/cases/{case_id}/assign` — Assign/reassign case
+- `POST /api/v1/cases/{case_id}/status` — Transition status
+- `POST /api/v1/cases/{case_id}/resolve` — Resolve case with required summary
+- `POST /api/v1/cases/{case_id}/notes` — Add append-only analyst note
+- `GET /api/v1/cases/{case_id}/notes` — List case notes
+- `POST /api/v1/cases/{case_id}/evidence` — Link evidence pointer
+- `GET /api/v1/cases/{case_id}/timeline` — Retrieve audit-derived chronological timeline
+
+### 14.8 Deferred Items
+
+- **Phase 10**: Execution of active response actions (containment, firewall blocks, account lockout).
+- **Phase 11**: Interactive SOC web console and dashboard.
+- **Phase 12**: RBAC, JWT tokens, and multi-tenant authentication.
+- **Phase 14**: External ticketing webhooks (Jira, ServiceNow, TheHive).

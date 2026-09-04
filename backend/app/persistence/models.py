@@ -156,3 +156,43 @@ class AuditEvent(SQLModel, table=True):
     target: str = Field(max_length=256)
     result: str
     metadata_json: str = "{}"
+
+
+class Case(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    case_id: str = Field(index=True, unique=True, max_length=256)
+    title: str = Field(max_length=256)
+    description: str
+    severity: int
+    priority: str = Field(default="medium", max_length=32)
+    status: str = Field(default="open", max_length=32)
+    assignee: str | None = Field(default=None, max_length=256)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    first_seen: datetime | None = None
+    last_seen: datetime | None = None
+    incident_ids_json: str = "[]"
+    investigation_ids_json: str = "[]"
+    tags_json: str = "[]"
+    resolution_json: str | None = None
+
+
+class CaseNoteRecord(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    note_id: str = Field(index=True, unique=True, max_length=256)
+    case_id: str = Field(index=True, max_length=256)
+    author: str = Field(max_length=256)
+    content: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class EvidenceReferenceRecord(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    evidence_id: str = Field(index=True, unique=True, max_length=256)
+    case_id: str = Field(index=True, max_length=256)
+    evidence_type: str = Field(max_length=64)
+    reference_key: str = Field(index=True, max_length=256)
+    description: str = ""
+    added_by: str = Field(max_length=256)
+    added_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -1,9 +1,24 @@
 """Persistence models and repositories."""
 
-from .models import Alert, AuditEvent, Correlation, Event, Incident, Investigation, ResponseAction, RiskAssessment, ThreatIntelEnrichment
+from .models import (
+    Alert,
+    AuditEvent,
+    Case,
+    CaseNoteRecord,
+    Correlation,
+    Event,
+    EvidenceReferenceRecord,
+    Incident,
+    Investigation,
+    ResponseAction,
+    RiskAssessment,
+    ThreatIntelEnrichment,
+)
 from .repositories import (
     AlertRepository,
     AlertWriteResult,
+    CaseRepository,
+    CaseWriteResult,
     CorrelationRepository,
     CorrelationWriteResult,
     EventRepository,
@@ -23,12 +38,17 @@ __all__ = [
     "AlertRepository",
     "AlertWriteResult",
     "AuditEvent",
+    "Case",
+    "CaseNoteRecord",
+    "CaseRepository",
+    "CaseWriteResult",
     "Correlation",
     "CorrelationRepository",
     "CorrelationWriteResult",
     "Event",
     "EventRepository",
     "EventWriteResult",
+    "EvidenceReferenceRecord",
     "Incident",
     "IncidentRepository",
     "IncidentWriteResult",

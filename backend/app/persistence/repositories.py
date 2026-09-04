@@ -6,6 +6,11 @@ from dataclasses import dataclass
 from sqlmodel import Session, select
 
 from ..models.alerts import Alert as DomainAlert
+from ..models.cases import (
+    Case as DomainCase,
+    CaseNote as DomainCaseNote,
+    EvidenceReference as DomainEvidenceReference,
+)
 from ..models.correlation import Correlation as DomainCorrelation
 from ..models.events import NormalizedEvent
 from ..models.incidents import Incident as DomainIncident
@@ -15,8 +20,11 @@ from ..models.threat_intel import ThreatIntelResult as DomainThreatIntelResult
 from .models import (
     Alert as PersistenceAlert,
     AuditEvent,
+    Case as PersistenceCase,
+    CaseNoteRecord as PersistenceCaseNoteRecord,
     Correlation as PersistenceCorrelation,
     Event,
+    EvidenceReferenceRecord as PersistenceEvidenceReferenceRecord,
     Incident as PersistenceIncident,
     Investigation as PersistenceInvestigation,
     RiskAssessment as PersistenceRiskAssessment,
@@ -636,5 +644,177 @@ class InvestigationRepository:
             select(PersistenceInvestigation)
             .where(PersistenceInvestigation.incident_id == incident_id)
             .order_by(PersistenceInvestigation.generated_at.desc())
+            .limit(limit)
+        ).all()
+
+
+@dataclass(frozen=True)
+class CaseWriteResult:
+    case: PersistenceCase
+    created: bool
+
+
+class CaseRepository:
+    def __init__(self, session: Session):
+        self.session = session
+
+    def create_case(self, case: DomainCase) -> CaseWriteResult:
+        """Store a new case, returning the existing row if duplicate case_id."""
+        existing = self.get_case(case.case_id)
+        if existing is not None:
+            return CaseWriteResult(case=existing, created=False)
+
+        status_val = case.status.value if hasattr(case.status, "value") else str(case.status)
+        priority_val = case.priority.value if hasattr(case.priority, "value") else str(case.priority)
+        resolution_val = (
+            json.dumps(case.resolution.model_dump(mode="json"), sort_keys=True)
+            if case.resolution
+            else None
+        )
+
+        record = PersistenceCase(
+            case_id=case.case_id,
+            title=case.title,
+            description=case.description,
+            severity=case.severity,
+            priority=priority_val,
+            status=status_val,
+            assignee=case.assignee,
+            created_at=case.created_at,
+            updated_at=case.updated_at,
+            first_seen=case.first_seen,
+            last_seen=case.last_seen,
+            incident_ids_json=json.dumps(case.incident_ids, sort_keys=True),
+            investigation_ids_json=json.dumps(case.investigation_ids, sort_keys=True),
+            tags_json=json.dumps(case.tags, sort_keys=True),
+            resolution_json=resolution_val,
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+        return CaseWriteResult(case=record, created=True)
+
+    def update_case(self, case: DomainCase) -> PersistenceCase | None:
+        """Update an existing case."""
+        record = self.get_case(case.case_id)
+        if record is None:
+            return None
+
+        status_val = case.status.value if hasattr(case.status, "value") else str(case.status)
+        priority_val = case.priority.value if hasattr(case.priority, "value") else str(case.priority)
+        resolution_val = (
+            json.dumps(case.resolution.model_dump(mode="json"), sort_keys=True)
+            if case.resolution
+            else None
+        )
+
+        record.title = case.title
+        record.description = case.description
+        record.severity = case.severity
+        record.priority = priority_val
+        record.status = status_val
+        record.assignee = case.assignee
+        record.updated_at = datetime.now(timezone.utc)
+        record.first_seen = case.first_seen
+        record.last_seen = case.last_seen
+        record.incident_ids_json = json.dumps(case.incident_ids, sort_keys=True)
+        record.investigation_ids_json = json.dumps(case.investigation_ids, sort_keys=True)
+        record.tags_json = json.dumps(case.tags, sort_keys=True)
+        record.resolution_json = resolution_val
+
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+        return record
+
+    def get_case(self, case_id: str) -> PersistenceCase | None:
+        return self.session.exec(
+            select(PersistenceCase).where(PersistenceCase.case_id == case_id)
+        ).first()
+
+    def list_cases(
+        self,
+        status: str | None = None,
+        priority: str | None = None,
+        assignee: str | None = None,
+        limit: int = 100,
+    ) -> Sequence[PersistenceCase]:
+        stmt = select(PersistenceCase)
+        if status is not None:
+            stmt = stmt.where(PersistenceCase.status == status)
+        if priority is not None:
+            stmt = stmt.where(PersistenceCase.priority == priority)
+        if assignee is not None:
+            stmt = stmt.where(PersistenceCase.assignee == assignee)
+        return self.session.exec(
+            stmt.order_by(PersistenceCase.updated_at.desc()).limit(limit)
+        ).all()
+
+    # Note operations (normalized table)
+    def add_note(self, note: DomainCaseNote) -> PersistenceCaseNoteRecord:
+        record = PersistenceCaseNoteRecord(
+            note_id=note.note_id,
+            case_id=note.case_id,
+            author=note.author,
+            content=note.content,
+            created_at=note.created_at,
+            updated_at=note.updated_at,
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+        return record
+
+    def list_notes_by_case(
+        self, case_id: str, limit: int = 100
+    ) -> Sequence[PersistenceCaseNoteRecord]:
+        return self.session.exec(
+            select(PersistenceCaseNoteRecord)
+            .where(PersistenceCaseNoteRecord.case_id == case_id)
+            .order_by(PersistenceCaseNoteRecord.created_at.asc())
+            .limit(limit)
+        ).all()
+
+    # Evidence Reference operations (normalized table)
+    def add_evidence_reference(
+        self, ref: DomainEvidenceReference
+    ) -> PersistenceEvidenceReferenceRecord:
+        """Add evidence reference or return existing if already linked."""
+        evidence_type_val = (
+            ref.evidence_type.value
+            if hasattr(ref.evidence_type, "value")
+            else str(ref.evidence_type)
+        )
+        existing = self.session.exec(
+            select(PersistenceEvidenceReferenceRecord).where(
+                PersistenceEvidenceReferenceRecord.case_id == ref.case_id,
+                PersistenceEvidenceReferenceRecord.evidence_type == evidence_type_val,
+                PersistenceEvidenceReferenceRecord.reference_key == ref.reference_key,
+            )
+        ).first()
+        if existing is not None:
+            return existing
+
+        record = PersistenceEvidenceReferenceRecord(
+            evidence_id=ref.evidence_id,
+            case_id=ref.case_id,
+            evidence_type=evidence_type_val,
+            reference_key=ref.reference_key,
+            description=ref.description,
+            added_by=ref.added_by,
+            added_at=ref.added_at,
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+        return record
+
+    def list_evidence_by_case(
+        self, case_id: str, limit: int = 200
+    ) -> Sequence[PersistenceEvidenceReferenceRecord]:
+        return self.session.exec(
+            select(PersistenceEvidenceReferenceRecord)
+            .where(PersistenceEvidenceReferenceRecord.case_id == case_id)
+            .order_by(PersistenceEvidenceReferenceRecord.added_at.asc())
             .limit(limit)
         ).all()

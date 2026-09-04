@@ -2,6 +2,16 @@
 
 from .alerts import Alert, AlertStatus
 from .audit import AuditEvent
+from .cases import (
+    Case,
+    CaseNote,
+    CasePriority,
+    CaseResolution,
+    CaseStatus,
+    CaseTimelineEntry,
+    EvidenceReference,
+    EvidenceType,
+)
 from .correlation import CorrelatableAlert, Correlation, CorrelationMatch, CorrelationStatus
 from .events import NormalizedEvent
 from .incidents import Incident, IncidentStatus
@@ -22,12 +32,20 @@ __all__ = [
     "Alert",
     "AlertStatus",
     "AuditEvent",
+    "Case",
+    "CaseNote",
+    "CasePriority",
+    "CaseResolution",
+    "CaseStatus",
+    "CaseTimelineEntry",
     "CorrelatableAlert",
     "Correlation",
     "CorrelationMatch",
     "CorrelationStatus",
     "DetectionMatch",
     "DetectionRule",
+    "EvidenceReference",
+    "EvidenceType",
     "FindingItem",
     "FindingType",
     "IOC",

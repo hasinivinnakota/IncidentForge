@@ -2,6 +2,7 @@
 
 from .ai_investigator import AIInvestigatorService
 from .alerts import AlertService
+from .cases import CaseService
 from .correlation import CorrelationEngine, CorrelationResult
 from .detection import DetectionEngine
 from .incidents import IncidentProcessResult, IncidentService
@@ -15,6 +16,7 @@ from .threat_intel import ThreatIntelEnrichmentResult, ThreatIntelligenceService
 __all__ = [
     "AIInvestigatorService",
     "AlertService",
+    "CaseService",
     "CorrelationEngine",
     "CorrelationResult",
     "DetectionEngine",
