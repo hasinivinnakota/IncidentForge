@@ -1,121 +1,201 @@
-﻿<p align="center">
-     <h1 align="center">🛡️ INCIDENTFORGE</h1>
-  <p align="center">
-    <strong>AI-Assisted SOC Investigation & Automated Incident Response Platform</strong>
-  </p>
-  <p align="center">
-    A defensive cybersecurity portfolio project demonstrating end-to-end SOC operations — from endpoint telemetry collection through AI-assisted investigation to automated incident response.
-  </p>
-</p>
+# 🛡️ INCIDENTFORGE
+
+**AI-Assisted SOC Investigation & Incident Response Platform**
+
+IncidentForge is a modern, defensive cybersecurity operations platform that automates the progression from raw endpoint telemetry collection to alert detection, multi-stage correlation, machine learning risk prioritization, threat intelligence enrichment, LLM-powered investigation, SOC case management, and analyst-controlled response simulation.
 
 ---
 
-## 🎯 Overview
+## 🎯 Problem Statement
 
-IncidentForge is an authorized defensive cybersecurity laboratory that integrates:
+Modern Security Operations Centers (SOCs) face alert fatigue, disconnected detection tools, fragmented investigative workflows, and risky automated response mechanisms.
 
-- **Endpoint Telemetry** — Windows event collection via Sysmon
-- **SIEM** — Wazuh Manager for log aggregation, alerting, and rule-based detection
-- **Detection Engineering** — Custom detection rules mapped to MITRE ATT&CK
-- **Threat Intelligence** — Automated IOC enrichment from open-source feeds
-- **Alert Pipeline** — Normalization → Correlation → Enrichment
-- **ML Risk Scoring** — Machine learning model for prioritizing alerts by risk
-- **AI Investigation** — LLM-assisted analysis and human-readable incident explanations
-- **SOC Dashboard** — Real-time security operations center interface
-- **Automated Response** — Playbook-driven incident response with analyst approval gates
-- **Audit Trail** — Complete logging of all investigation and response actions
+IncidentForge demonstrates how to solve these challenges with an integrated defensive platform:
+- **Correlating alerts into unified attack chains** rather than drowning analysts in isolated events.
+- **Prioritizing threats using deterministic ML risk scoring** with feature attribution.
+- **Accelerating forensic analysis with structured AI investigation** while keeping the AI strictly advisory.
+- **Enforcing strict containment gates for incident response** via simulation sandboxing and analyst approval requirements.
 
-## 🏗️ Architecture
+---
+
+## 🏗️ System Architecture
 
 ```
-Windows Endpoint (Sysmon + Wazuh Agent)
-        ↓
-   Wazuh Manager / SIEM  (Docker)
-        ↓
-   Alert Normalization
-        ↓
-   Threat Intelligence Enrichment
-        ↓
-   Incident Correlation
-        ↓
-   ML Risk Scoring
-        ↓
-   AI-Assisted Investigation
-        ↓
-   SOC Dashboard
-        ↓
-   Response Decision (Auto / Analyst-Approved)
-        ↓
-   Response Verification
-        ↓
-   Audit Trail
+Wazuh / Sysmon / Synthetic JSON
+       │
+       ▼
+WazuhAlertAdapter (Direct Ingestion)
+       │
+       ▼
+NormalizationService (Canonical Event Model)
+       │
+       ▼
+EventPipeline
+       ├──► EventProcessingService (Audit Logging & Event Persistence)
+       ├──► DetectionEngine (Built-in Rules mapped to MITRE ATT&CK)
+       │       │
+       │       ▼
+       ├──► AlertService (Deterministic Alert Creation)
+       │       │
+       │       ▼
+       ├──► CorrelationEngine (Multi-Alert Attack Sequence Correlation)
+       │       │
+       │       ▼
+       ├──► IncidentService (Incident Lifecycle & Aggregate Evidence)
+       │       │
+       │       ▼
+       ├──► ML Risk Scoring (Logistic Regression Feature Attribution)
+       │       │
+       │       ▼
+       ├──► Threat Intelligence (Automated IOC Extraction & Enrichment)
+       │
+       ├──► AI Investigator (Structured Advisory Findings: Observed/Inferred)
+       │
+       ├──► SOC Case Management (Notes, Assignees, Evidence Pointers)
+       │
+       └──► Controlled Response (Simulation-Only, Analyst-Approved Sandbox)
+              │
+              ▼
+    Next.js SOC Dashboard (Real-Time Operations & Workspace)
 ```
+
+---
+
+## ⚡ Major Capabilities
+
+1. **Wazuh & Telemetry Ingestion (`WazuhAlertAdapter`)**:
+   - Ingests raw Wazuh alert JSON records directly into canonical `NormalizedEvent` objects.
+   - Bypasses the known OpenSearch 2.x / Filebeat 7.10.2 bulk indexing `_type` limitation without requiring Docker/Elasticsearch configuration tampering.
+   - Idempotent event processing based on deterministic alert IDs.
+   - Automatic redaction of credentials, passwords, session tokens, and API keys.
+
+2. **Detection & Correlation Engine**:
+   - Evaluates telemetry against built-in rules (e.g. `T1059` Command Execution, `T1110` Brute Force Authentication).
+   - Correlates disparate alerts sharing entities (users, source IPs, hosts) within configurable time windows into coherent Incidents.
+
+3. **ML Risk Scoring**:
+   - Scores active incidents from 0 to 100 with clear risk levels (LOW, MEDIUM, HIGH, CRITICAL).
+   - Provides transparent feature contribution weights (e.g. severity weighting, entity diversity, attack sequence indicators).
+   - *Note: Trained and evaluated using synthetic development datasets for deterministic baseline evaluation.*
+
+4. **Threat Intelligence Enrichment**:
+   - Extracts observable IOCs (IPv4, domains, URLs, hashes) automatically from incident telemetry.
+   - Enriches indicators with classification, reputation scores, and provider explanations.
+
+5. **AI Investigator (Advisory Analysis)**:
+   - On-demand incident analysis generating structured findings:
+     - **OBSERVED**: Empirically confirmed telemetry and alert evidence.
+     - **INFERRED**: Probable attacker tactics, MITRE ATT&CK associations.
+     - **RECOMMENDED**: Concrete investigative steps and containment suggestions.
+   - Highlights gaps in collected telemetry (e.g. missing network flow logs).
+   - **Strictly Advisory**: Labeled as non-destructive recommendations requiring analyst validation.
+
+6. **SOC Case Management**:
+   - Comprehensive case tracking, priority assignment, analyst assignment, append-only notes, and evidence reference pointers.
+
+7. **Controlled Response Safety Model (Phase 10)**:
+   - **SIMULATION ONLY**: Actions model containment and remediation without modifying host, network, file, or account state.
+   - **Analyst Approval Required**: Enforces a strict state machine (`PROPOSED` → `APPROVED` / `REJECTED` → `EXECUTED`). Direct execution of unapproved actions is blocked.
+   - **Allowlisted Actions**: Restricted to `isolate_endpoint`, `quarantine_file`, and `revoke_credentials`.
+   - Complete audit logging of actors, approval timestamps, and simulated outcomes.
+
+8. **Next.js SOC Operations Dashboard**:
+   - Real-time KPI summaries, threat activity charts, MITRE ATT&CK distribution, and active alert streams.
+   - 8-tab deep-dive Incident Workspace (Overview, Timeline, Evidence, ML Risk, AI Investigation, Threat Intelligence, Case, Response).
+   - Resilient multi-endpoint loading via `Promise.allSettled` to prevent widget failures from blanking the console.
+
+---
 
 ## 🛠️ Technology Stack
 
-| Layer | Technology |
-|---|---|
-| Endpoint Telemetry | Sysmon, Windows Event Logs |
-| SIEM | Wazuh 4.x (Docker) |
-| Backend API | Python / FastAPI |
-| ML Risk Scoring | scikit-learn, XGBoost |
-| AI Investigation | API-based LLM (OpenAI / Google Gemini) |
-| SOC Dashboard | Vite + React |
-| Infrastructure | Docker Compose, WSL2 |
-| Detection Rules | Custom Wazuh rules, MITRE ATT&CK mappings |
+- **Backend**: Python 3.12, FastAPI, Pydantic v2, SQLModel (SQLAlchemy ORM), SQLite.
+- **Frontend**: Next.js 16 (App Router), TypeScript, Tailwind CSS, Lucide React, Recharts.
+- **Machine Learning**: Scikit-Learn (Logistic Regression risk baseline).
+- **Telemetry & SIEM**: Wazuh Manager 4.9, Sysmon, Filebeat (Docker / WSL2).
+- **Testing & Quality**: Pytest (223 tests), Next.js Turbopack compiler.
 
-## 📁 Project Structure
+---
 
+## 🚀 Local Setup & Instructions
+
+### Prerequisites
+- Windows 10/11 (or Linux/macOS)
+- Python 3.11+
+- Node.js 18+ and `pnpm` (or `npm`)
+
+### 1. Backend Setup
+```bash
+# Clone the repository
+cd IncidentForge
+
+# Create and activate virtual environment
+python -m venv .venv
+# On Windows:
+.venv\Scripts\activate
+# On Linux/macOS:
+# source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run backend test suite
+pytest -q
 ```
-IncidentForge/
-├── backend/              # FastAPI backend API
-├── dashboard/            # React SOC dashboard
-├── infrastructure/       # Docker & configuration files
-│   ├── docker/           # Wazuh container configs
-│   └── configs/          # Sysmon & Wazuh configs
-├── detection/            # Detection rules & MITRE mappings
-├── threat-intel/         # Threat intelligence enrichment
-├── pipeline/             # Alert normalization & correlation
-├── ml/                   # ML risk scoring models
-├── ai-investigator/      # AI-assisted investigation engine
-├── response-engine/      # Automated response playbooks
-├── datasets/             # Sample data & attack simulations
-├── tests/                # Unit, integration, and E2E tests
-├── scripts/              # Utility & simulation scripts
-├── evaluation/           # Metrics & benchmarks
-└── docs/                 # Project documentation
+
+### 2. Frontend Setup
+```bash
+cd dashboard
+
+# Install dependencies
+pnpm install
+
+# Build static production bundle
+pnpm run build
 ```
 
-## ⚠️ Disclaimer
+### 3. Running Locally
+Start the backend:
+```bash
+# From workspace root:
+.venv\Scripts\python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+```
 
-This project is an **authorized defensive cybersecurity laboratory** designed for educational and portfolio purposes. All activity is:
+Start the dashboard:
+```bash
+# From dashboard directory:
+cd dashboard
+pnpm run dev --port 3000
+```
+Visit **`http://localhost:3000`** in your browser. The dashboard will automatically connect to `http://127.0.0.1:8000` with the `API ONLINE` indicator.
 
-- Conducted on the operator's own local environment
-- Limited to defensive security operations
-- Using benign simulation artifacts only (no real malware)
-- Isolated from external networks
-- Not targeting any external systems
+---
 
-**No offensive activity is performed against real systems.**
+## 🧪 Reproducible Demo Walkthrough
 
-## 📋 Project Phases
+A complete, safe synthetic attack sequence demo is provided in [docs/demo_scenario.md](docs/demo_scenario.md):
+1. Ingest synthetic authentication failures targeting test entity `user:sec_analyst_test` from documentation IP `198.51.100.23`.
+2. Inspect the correlated Incident generated in the Next.js Overview.
+3. Open the Incident Workspace to review the ML Risk score, AI Investigation report, Threat Intel IOCs, and simulate an analyst-approved `isolate_endpoint` action.
 
-- [x] **Phase 0** — Environment Assessment
-- [ ] **Phase 1** — Foundation Setup (Docker, WSL2, Repository)
-- [ ] **Phase 2** — Wazuh SIEM Deployment
-- [ ] **Phase 3** — Endpoint Telemetry (Sysmon + Wazuh Agent)
-- [ ] **Phase 4** — Detection Engineering & MITRE Mapping
-- [x] **Phase 5** — IncidentForge Backend Foundation (Steps 1–5 complete: FastAPI, Pydantic, adapter boundary, normalization, normalization tests, SQLite persistence, event-processing lifecycle, audit events)
-- [ ] **Phase 6** — ML Risk Scoring
-- [ ] **Phase 7** — AI-Assisted Investigation
-- [ ] **Phase 8** — SOC Dashboard
-- [ ] **Phase 9** — Automated Response Engine
-- [ ] **Phase 10** — Evaluation, Testing & Documentation
+---
 
-## 📄 License
+## 🔒 Security Boundaries & Limitations
 
-This project is for educational and portfolio demonstration purposes.
+- **Defensive & Simulated Only**: Response actions are strictly simulated; no shell execution, subprocess invocation, or endpoint modification takes place.
+- **Safe RFC Test IPs**: All default fixtures and test scenarios use reserved documentation subnets (RFC 5737: `198.51.100.0/24`).
+- **Credential Hygiene**: Automated sanitization strips passwords, tokens, API keys, and authorization headers from all ingested payloads and audit trails.
+- **Model Evaluation**: ML risk models are trained on synthetic baseline datasets and intended for structured prioritization demonstration rather than production threat classification.
+- **Known SIEM Limitation**: Wazuh 4.9 with embedded Filebeat 7.10.2 generates legacy `_type` bulk parameters rejected by OpenSearch 2.13. IncidentForge uses the direct `WazuhAlertAdapter` to consume alerts safely without modifying cluster infrastructure.
 
-## 👤 Author
+---
 
-**Hasini Vinnakota**
+## 📊 Verification & Test Results
+
+- **Backend Unit & Integration Tests**: **223 passed** in `13.13s` (100% pass rate across Detection, Correlation, Risk Scoring, Threat Intel, AI Investigator, Case Management, Response, and Wazuh Adapter).
+- **Frontend Build**: **Clean build** (`next build` compiled with zero syntax or bundling errors).
+- **Git Hygiene**: Clean diff, zero whitespace errors, zero secret leaks.
+
+---
+
+## 📜 License
+This project is licensed under the MIT License for educational and portfolio demonstration purposes.

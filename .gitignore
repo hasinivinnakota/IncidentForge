@@ -60,6 +60,7 @@ yarn-error.log*
 .pnpm-debug.log*
 dashboard/dist/
 dashboard/build/
+dashboard-vite-backup/
 
 # ==========================================
 # ML / Data Science
@@ -98,10 +99,12 @@ wazuh-data/
 ossec-logs/
 
 # Application databases
-backend/data/*.db
+backend/data/
 *.sqlite
 *.sqlite3
 *.db
+*.db.backup
+*.backup
 
 # ==========================================
 # Logs

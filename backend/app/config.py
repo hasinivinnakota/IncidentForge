@@ -12,6 +12,7 @@ class Settings:
     api_port: int = 8000
     log_level: str = "INFO"
     database_url: str = "sqlite:///backend/data/incidentforge.db"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
 
 def get_settings() -> Settings:
@@ -23,4 +24,5 @@ def get_settings() -> Settings:
         api_port=int(os.getenv("INCIDENTFORGE_API_PORT", str(Settings.api_port))),
         log_level=os.getenv("INCIDENTFORGE_LOG_LEVEL", Settings.log_level).upper(),
         database_url=os.getenv("INCIDENTFORGE_DATABASE_URL", Settings.database_url),
+        cors_origins=os.getenv("INCIDENTFORGE_CORS_ORIGINS", Settings.cors_origins),
     )

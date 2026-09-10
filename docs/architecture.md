@@ -213,7 +213,7 @@ Phase 2F is complete with a known ingestion compatibility limitation. The Wazuh 
 
 The Wazuh Manager, Indexer, Dashboard, Manager API, TLS, and persistent storage infrastructure is operational. The existing Wazuh alert index and its 195 alert documents are preserved. Wazuh 4.9.2 was inspected and retains Filebeat 7.10.2, so it does not resolve this issue. The official `compatibility.override_main_response_version` response override was tested and rejected because it breaks Dashboard compatibility. No unsupported workaround was implemented; this remains a documented infrastructure limitation rather than a silently masked failure.
 
-The Phase 5 backend should keep telemetry ingestion behind an adapter boundary so IncidentForge is not tightly coupled to the currently blocked Filebeat-to-OpenSearch path.
+In Phase 13, IncidentForge resolves this limitation cleanly via `WazuhAlertAdapter` (`backend/app/adapters/wazuh.py`). By consuming Wazuh alert JSON payloads directly (e.g. from `/var/ossec/logs/alerts/alerts.json` or the Wazuh Manager API `GET /alerts`) and mapping them into canonical `NormalizedEvent` records, IncidentForge completely bypasses the broken Filebeat `_type` bulk indexing path to OpenSearch without altering Docker or indexer configuration.
 
 ## 10. Phase 5 Backend Foundation
 
@@ -628,3 +628,63 @@ Actions are restricted to an explicit allowlist:
 - `POST /api/v1/response-actions/{action_id}/approve` — Analyst approves action (HTTP 200)
 - `POST /api/v1/response-actions/{action_id}/reject` — Analyst rejects action with reason (HTTP 200)
 - `POST /api/v1/response-actions/{action_id}/execute` — Run safe deterministic simulation (HTTP 200)
+
+---
+
+## 16. End-to-End Pipeline & Next.js SOC Dashboard (Phases 11–13)
+
+### 16.1 Comprehensive Data Pipeline
+
+The completed end-to-end telemetry and analysis pipeline operates as follows:
+
+```
+Wazuh Manager / Sysmon / Synthetic JSON
+       │
+       ▼
+WazuhAlertAdapter (backend/app/adapters/wazuh.py)
+       │
+       ▼
+NormalizationService (canonical NormalizedEvent model)
+       │
+       ▼
+EventPipeline
+       ├──► EventProcessingService (Persist event + Audit record)
+       │
+       ├──► DetectionEngine (Built-in detection rules: T1059, T1110, etc.)
+       │       │
+       │       ▼
+       ├──► AlertService (Deterministic alert creation + Audit trail)
+       │       │
+       │       ▼
+       ├──► CorrelationEngine (Time-window attack sequence correlation)
+       │       │
+       │       ▼
+       ├──► IncidentService (Incident lifecycle management)
+       │       │
+       │       ▼
+       ├──► ML Risk Scoring (Scikit-learn logistic regression / heuristics)
+       │       │
+       │       ▼
+       ├──► Threat Intelligence Service (IOC extraction & provider enrichment)
+       │
+       ├──► AI Investigator (On-demand advisory LLM analysis & gap detection)
+       │
+       ├──► Case Management (SOC analyst collaboration, notes, & evidence)
+       │
+       └──► Controlled Response (Simulation-only analyst-gated containment)
+```
+
+### 16.2 Modern SOC Web Console
+
+The frontend is implemented with Next.js (App Router), TypeScript, and Tailwind CSS.
+- **Operations Overview**: Real-time KPI summary (Active Alerts, Incidents, Critical Thresholds, Cases), interactive threat activity charts, MITRE ATT&CK coverage widget, and live alert streams.
+- **Incident Workspace**: 8-tab deep inspection console:
+  1. *Overview* — High-level telemetry, correlation link badges, and ML/AI summaries.
+  2. *Timeline* — Chronological event sequence derived from forensic investigation.
+  3. *Evidence* — Raw, bounded evidence JSON dictionary payloads.
+  4. *ML Risk* — 0-100 risk score, risk level badge, and feature contribution breakdown.
+  5. *AI Investigation* — Structured advisory findings (`OBSERVED`, `INFERRED`, `RECOMMENDED`), investigation gaps, and next steps.
+  6. *Threat Intelligence* — Table of enriched IOCs, confidence ratings, and reputation classifications.
+  7. *Case* — SOC case tracking and assigned analyst status.
+  8. *Response* — Controlled response action proposal, approval gating, and simulation execution.
+- **Resilience & Safety**: Per-widget error isolation via `Promise.allSettled`, zero client-side data fabrication, and prominent visual labeling of simulation and advisory boundaries.
