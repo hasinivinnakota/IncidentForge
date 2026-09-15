@@ -258,6 +258,25 @@ class AIInvestigatorService:
                         "source_entity": ev.source,
                     })
 
+        # Build dataset security context (v2.0) from evidence when incident involves dataset activity
+        dataset_context: dict = {}
+        if isinstance(evidence, dict):
+            dataset_id = evidence.get("dataset_id")
+            if dataset_id or any(
+                "dataset" in t.lower() for t in (incident_record.tags_json and [incident_record.tags_json] or [])
+            ):
+                dataset_context = {
+                    "dataset_id": dataset_id,
+                    "dataset_name": evidence.get("dataset_name", dataset_id or "unknown"),
+                    "actor": evidence.get("actor"),
+                    "sensitivity": evidence.get("dataset_sensitivity", evidence.get("sensitivity")),
+                    "records_accessed": evidence.get("records_accessed", 0),
+                    "sensitive_columns": evidence.get("sensitive_columns", []),
+                    "export_destination": evidence.get("export_destination"),
+                    "export_size_bytes": evidence.get("export_size_bytes", 0),
+                    "operations": evidence.get("operations", []),
+                }
+
         return LLMContext(
             incident_id=incident_record.incident_id,
             incident_title=self._sanitize_text(incident_record.title, 256),
@@ -272,6 +291,7 @@ class AIInvestigatorService:
             risk_score=risk_score,
             risk_level=risk_level,
             timeline_events=timeline_events,
+            dataset_context=dataset_context,
         )
 
     @staticmethod

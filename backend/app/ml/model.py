@@ -90,6 +90,7 @@ class BaselineLogisticRiskModel(RiskModel):
 
         # Calibrated default weights learned from synthetic SOC incident distributions
         self._weights: dict[str, float] = {
+            # v1.0 endpoint weights (unchanged)
             "incident_severity": 0.25,
             "correlation_severity": 0.35,
             "alert_count": 0.40,
@@ -102,6 +103,18 @@ class BaselineLogisticRiskModel(RiskModel):
             "has_privilege_escalation": 1.20,
             "time_span_seconds": 0.0001,
             "entity_diversity": 0.20,
+            # v2.0 dataset security weights
+            "has_dataset_activity": 0.50,
+            "has_sensitive_data_access": 1.00,
+            "has_bulk_export": 0.90,
+            "has_dataset_exfiltration": 1.30,
+            "dataset_sensitivity": 0.80,
+            "records_accessed_normalized": 0.60,
+            "records_modified_normalized": 0.70,
+            "export_volume_normalized": 0.75,
+            "sensitive_columns_count": 0.30,
+            "actor_novelty": 0.80,
+            "bulk_access_indicator": 0.65,
         }
         self._intercept: float = -4.5
 

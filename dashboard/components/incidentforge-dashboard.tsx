@@ -51,6 +51,7 @@ import {
   investigationsApi,
   casesApi,
   responseApi,
+  datasetsApi,
   type Alert,
   type Incident,
   type Case,
@@ -59,6 +60,8 @@ import {
   type ThreatIntelResult,
   type InvestigationResult,
   type ResponseAction,
+  type DatasetAsset,
+  type DatasetActivity,
   type Severity as SeverityType,
 } from "@/lib/api"
 import {
@@ -146,7 +149,7 @@ function formatTime(isoString?: string | null): string {
 // ---------------------------------------------------------------------------
 
 const navGroups = [
-  { label: "OPERATIONS", items: [["Overview", LayoutDashboard], ["Alerts", Bell], ["Correlations", GitBranch]] },
+  { label: "OPERATIONS", items: [["Overview", LayoutDashboard], ["Alerts", Bell], ["Correlations", GitBranch], ["Dataset Assets", Database], ["Dataset Activity", Activity]] },
   { label: "INVESTIGATION", items: [["Incidents", ShieldAlert], ["Cases", BriefcaseBusiness], ["AI Investigator", Bot], ["Threat Intelligence", Crosshair]] },
   { label: "RESPONSE", items: [["Response", Siren]] },
   { label: "SYSTEM", items: [["System", Settings]] },
@@ -794,7 +797,7 @@ function IncidentWorkspace({
   }
 
   // Response action handlers (Phase 10: simulation only, strict transitions)
-  const handleCreateAction = async (actionType: "isolate_endpoint" | "quarantine_file" | "revoke_credentials") => {
+  const handleCreateAction = async (actionType: ResponseActionType) => {
     setActionProcessing(actionType)
     try {
       await responseApi.createResponseAction(incidentId, { action_type: actionType, actor: "analyst" })
@@ -966,6 +969,24 @@ function IncidentWorkspace({
                 <span className="text-[9px] uppercase tracking-wider text-slate-500">Summary</span>
                 <p className="mt-1 leading-relaxed text-slate-300">{incident?.description}</p>
               </div>
+
+              {incident?.evidence && (incident.evidence.dataset_id || (incident.tags && incident.tags.some(t => t.toLowerCase().includes('dataset')))) && (
+                <div className="rounded border border-orange-400/20 bg-orange-400/5 p-3">
+                  <span className="text-[9px] uppercase tracking-wider text-orange-300 font-bold">Dataset Security Context</span>
+                  <div className="mt-2 grid grid-cols-2 gap-y-2 text-[11px]">
+                    <div><span className="text-slate-500">Dataset:</span> <span className="text-slate-300">{String(incident.evidence.dataset_name || incident.evidence.dataset_id || "Unknown")}</span></div>
+                    <div><span className="text-slate-500">Actor:</span> <span className="text-slate-300">{String(incident.evidence.actor || incident.evidence.entity_key || "Unknown")}</span></div>
+                    <div><span className="text-slate-500">Sensitivity:</span> <span className="text-slate-300">{String(incident.evidence.dataset_sensitivity || incident.evidence.sensitivity || "UNKNOWN")}</span></div>
+                    <div><span className="text-slate-500">Records Accessed:</span> <span className="text-slate-300 font-mono">{Number(incident.evidence.records_accessed || 0).toLocaleString()}</span></div>
+                    {incident.evidence.export_destination && (
+                      <div className="col-span-2"><span className="text-slate-500">Export Dest:</span> <span className="text-red-300">{String(incident.evidence.export_destination)}</span></div>
+                    )}
+                    {Array.isArray(incident.evidence.sensitive_columns) && incident.evidence.sensitive_columns.length > 0 && (
+                      <div className="col-span-2"><span className="text-slate-500">Sensitive Columns:</span> <span className="text-orange-300">{incident.evidence.sensitive_columns.join(", ")}</span></div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
@@ -1444,6 +1465,13 @@ function IncidentWorkspace({
                 >
                   + Propose Revoke Credentials
                 </button>
+                <button
+                  onClick={() => handleCreateAction("restrict_dataset_access")}
+                  disabled={actionProcessing !== null}
+                  className="rounded border border-orange-400/30 bg-orange-400/10 px-3 py-1.5 text-xs text-orange-200 hover:bg-orange-400/20 disabled:opacity-50"
+                >
+                  + Propose Restrict Dataset Access
+                </button>
               </div>
             </div>
 
@@ -1606,6 +1634,124 @@ function Overview({
   )
 }
 
+// ---------------------------------------------------------------------------
+// Dataset Security Views (v2.0)
+// ---------------------------------------------------------------------------
+
+function DatasetAssetsView({ datasets, loading }: { datasets: DatasetAsset[]; loading: boolean }) {
+  if (loading) return <div className="p-8 text-center text-sm text-slate-500 animate-pulse">Loading dataset catalog...</div>
+
+  return (
+    <div className="space-y-4">
+      <Panel title="Dataset Catalog">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-slate-300">
+            <thead className="border-b border-white/[0.06] bg-black/20 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Dataset Name</th>
+                <th className="px-4 py-3">Format</th>
+                <th className="px-4 py-3">Sensitivity</th>
+                <th className="px-4 py-3 text-right">Records</th>
+                <th className="px-4 py-3 text-right">Size (KB)</th>
+                <th className="px-4 py-3">Last Updated</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/[0.04]">
+              {datasets.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">No datasets registered.</td>
+                </tr>
+              ) : (
+                datasets.map((ds) => (
+                  <tr key={ds.dataset_id} className="transition-colors hover:bg-white/[0.02]">
+                    <td className="px-4 py-3 font-medium text-slate-200">
+                      <div className="flex items-center gap-2">
+                        <Database size={13} className="text-orange-400" />
+                        {ds.name}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] uppercase text-slate-400">
+                        {ds.format}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <SeverityBadge severity={ds.sensitivity as SeverityBadgeLevel} />
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-[11px] text-slate-400">
+                      {ds.record_count.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-[11px] text-slate-400">
+                      {Math.round(ds.size_bytes / 1024).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-[11px] text-slate-500">
+                      {formatTime(ds.updated_at)}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </div>
+  )
+}
+
+function DatasetActivityView({ activities, loading }: { activities: DatasetActivity[]; loading: boolean }) {
+  if (loading) return <div className="p-8 text-center text-sm text-slate-500 animate-pulse">Loading activity stream...</div>
+
+  return (
+    <div className="space-y-4">
+      <Panel title="Dataset Activity Stream">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-slate-300">
+            <thead className="border-b border-white/[0.06] bg-black/20 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Timestamp</th>
+                <th className="px-4 py-3">Actor</th>
+                <th className="px-4 py-3">Operation</th>
+                <th className="px-4 py-3">Dataset</th>
+                <th className="px-4 py-3 text-right">Records Accessed</th>
+                <th className="px-4 py-3">Context</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/[0.04]">
+              {activities.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">No activity recorded.</td>
+                </tr>
+              ) : (
+                activities.map((act) => (
+                  <tr key={act.activity_id} className="transition-colors hover:bg-white/[0.02]">
+                    <td className="px-4 py-3 font-mono text-[11px] text-slate-400">
+                      {formatTime(act.timestamp)}
+                    </td>
+                    <td className="px-4 py-3 text-slate-200">{act.actor}</td>
+                    <td className="px-4 py-3">
+                      <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-orange-200">
+                        {act.operation}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-300">{act.dataset_name}</td>
+                    <td className="px-4 py-3 text-right font-mono text-[11px] text-slate-400">
+                      {act.records_accessed.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-[10px] text-slate-500">
+                      {act.export_destination && <span className="text-red-300 block">Export: {act.export_destination}</span>}
+                      {act.sensitive_columns.length > 0 && <span className="text-orange-300 block">Cols: {act.sensitive_columns.join(', ')}</span>}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </div>
+  )
+}
+
 function Placeholder({ page }: { page: string }) {
   return (
     <div className="flex min-h-[65vh] flex-col items-center justify-center rounded-lg border border-dashed border-white/10 bg-[#111519]/60 text-center">
@@ -1638,33 +1784,31 @@ export function IncidentForgeDashboard() {
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [correlations, setCorrelations] = useState<Correlation[]>([])
   const [cases, setCases] = useState<Case[]>([])
+  const [datasets, setDatasets] = useState<DatasetAsset[]>([])
+  const [datasetActivities, setDatasetActivities] = useState<DatasetActivity[]>([])
 
   const fetchLiveTelemetry = useCallback(async () => {
     setRefreshing(true)
     try {
-      const [healthRes, alertsRes, incidentsRes, correlationsRes, casesRes] =
+      const [healthRes, alertsRes, incidentsRes, correlationsRes, casesRes, datasetsRes, activitiesRes] =
         await Promise.allSettled([
           healthApi.checkHealth(),
           alertsApi.listAlerts({ limit: 100 }),
           incidentsApi.listIncidents({ limit: 50 }),
           correlationsApi.listCorrelations({ limit: 50 }),
           casesApi.listCases({ limit: 50 }),
+          datasetsApi.listDatasets(100),
+          datasetsApi.getDatasetActivity("all", 100).catch(() => []), // Optional if endpoint supports "all" or generic list
         ])
 
       setIsOnline(healthRes.status === "fulfilled" && healthRes.value.status === "ok")
 
-      if (alertsRes.status === "fulfilled") {
-        setAlerts(alertsRes.value)
-      }
-      if (incidentsRes.status === "fulfilled") {
-        setIncidents(incidentsRes.value)
-      }
-      if (correlationsRes.status === "fulfilled") {
-        setCorrelations(correlationsRes.value)
-      }
-      if (casesRes.status === "fulfilled") {
-        setCases(casesRes.value)
-      }
+      if (alertsRes.status === "fulfilled") setAlerts(alertsRes.value)
+      if (incidentsRes.status === "fulfilled") setIncidents(incidentsRes.value)
+      if (correlationsRes.status === "fulfilled") setCorrelations(correlationsRes.value)
+      if (casesRes.status === "fulfilled") setCases(casesRes.value)
+      if (datasetsRes.status === "fulfilled") setDatasets(datasetsRes.value)
+      if (activitiesRes.status === "fulfilled") setDatasetActivities(activitiesRes.value)
     } catch {
       setIsOnline(false)
     } finally {
@@ -1715,6 +1859,10 @@ export function IncidentForgeDashboard() {
               isOnline={isOnline}
               loading={refreshing && alerts.length === 0}
             />
+          ) : page === "Dataset Assets" ? (
+            <DatasetAssetsView datasets={datasets} loading={refreshing && datasets.length === 0} />
+          ) : page === "Dataset Activity" ? (
+            <DatasetActivityView activities={datasetActivities} loading={refreshing && datasetActivities.length === 0} />
           ) : (
             <Placeholder page={page} />
           )}

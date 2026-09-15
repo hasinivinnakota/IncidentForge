@@ -688,3 +688,41 @@ The frontend is implemented with Next.js (App Router), TypeScript, and Tailwind 
   7. *Case* — SOC case tracking and assigned analyst status.
   8. *Response* — Controlled response action proposal, approval gating, and simulation execution.
 - **Resilience & Safety**: Per-widget error isolation via `Promise.allSettled`, zero client-side data fabrication, and prominent visual labeling of simulation and advisory boundaries.
+
+---
+
+## 17. Dataset Security Operations (IncidentForge v2)
+
+IncidentForge v2 introduces a parallel data plane for monitoring, analyzing, and responding to activity against sensitive datasets. It integrates completely with the existing IncidentForge v1 SOC pipeline without redesigning the core SIEM components.
+
+### 17.1 Unified Telemetry Pipeline
+Dataset Activity bypasses Wazuh and Sysmon. It enters the system via the `DatasetActivityAdapter`, which is responsible for normalizing structured dataset access and modification operations into the canonical `NormalizedEvent` model.
+
+```
+Wazuh / Sysmon                    Dataset Activity
+      │                                  │
+      ▼                                  ▼
+WazuhAlertAdapter             DatasetActivityAdapter
+      │                                  │
+      └──────────────┬───────────────────┘
+                     ▼
+              NormalizedEvent
+                     ▼
+              EventPipeline
+```
+
+### 17.2 Domain & Persistence Models
+- **`DatasetAsset`**: Represents a registered dataset profile (e.g., CSV, JSON, Parquet) with column metadata, sensitivity classifications, and row/column counts.
+- **`DatasetActivity`**: Tracks access and modification activities, mapping actors, host IPs, dataset IDs, and the volume of records modified or accessed.
+
+### 17.3 Dataset Analysis Extensions
+- **Detection & Correlation**: `dataset_builtin.py` introduces specific detection rules (e.g., PII Export, Mass Deletion, Unauthorized Actor), and `dataset_correlation.py` introduces time-window sequence attack rules.
+- **ML Risk Features**: v2.0 ML features track dataset interactions (`has_pii_access`, `has_mass_export`, `has_schema_alteration`). The Baseline Logistic Risk Model is extended with dataset-specific weights.
+- **AI Investigator**: The LLM Context includes a bounded `dataset_context` for dataset metadata and activity summaries. The AI provides dataset-aware hypothesis generation and recommends `restrict_dataset_access`.
+- **Response**: The `restrict_dataset_access` action is registered in the Controlled Response pipeline. As with all v1 responses, this action is strictly simulation-only.
+
+### 17.4 Dashboard Views
+The Next.js dashboard is extended with:
+- **Dataset Catalog View**: Interactive table of registered dataset assets, sensitivities, formats, and structural characteristics.
+- **Dataset Activity Stream**: Real-time chronological table of dataset operations.
+- **Incident Workspace**: Added Dataset Security Context panel rendering actor, sensitivity, and column telemetry dynamically when an incident is related to dataset compromise.

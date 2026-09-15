@@ -395,6 +395,13 @@ class ResponseService:
                 f"SIMULATION ONLY: credentials associated with incident '{incident_id}' would be revoked. "
                 "No accounts, passwords, sessions, or credentials were changed."
             )
+        if action_type == ResponseActionType.RESTRICT_DATASET_ACCESS.value:
+            return (
+                f"SIMULATION ONLY: access policy for the dataset associated with incident '{incident_id}' "
+                "would be restricted to read-only / quarantine mode. "
+                "No files, storage ACLs, permissions, cloud buckets, or dataset contents were modified. "
+                "ANALYST APPROVAL REQUIRED before any real action could be taken."
+            )
 
         raise ResponseValidationError(
             f"No simulation handler exists for action type: {action_type}"

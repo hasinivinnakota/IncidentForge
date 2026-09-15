@@ -81,6 +81,18 @@ def generate_synthetic_dataset(
             has_priv,
             round(time_span, 1),
             entity_diversity,
+            # 11 Dataset mock features
+            1.0 if is_attack and rng.random() < 0.2 else 0.0,  # has_dataset_activity
+            1.0 if is_attack and rng.random() < 0.1 else 0.0,  # has_sensitive_data_access
+            0.0,  # has_bulk_export
+            0.0,  # has_dataset_exfiltration
+            0.0,  # dataset_sensitivity
+            0.0,  # records_accessed_normalized
+            0.0,  # records_modified_normalized
+            0.0,  # export_volume_normalized
+            0.0,  # sensitive_columns_count
+            0.0,  # actor_novelty
+            0.0,  # bulk_access_indicator
         ]
         X.append(row)
         y.append(label)

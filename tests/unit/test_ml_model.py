@@ -77,7 +77,7 @@ def test_baseline_logistic_model_prediction_structure() -> None:
     assert isinstance(pred.feature_contributions, dict)
     assert pred.model_name == "baseline_logistic_regression"
     assert pred.model_version == "v1.0"
-    assert pred.feature_version == "v1.0"
+    assert pred.feature_version == "v2.0"
 
 
 def test_model_deterministic_prediction() -> None:

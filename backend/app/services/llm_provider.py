@@ -36,6 +36,8 @@ class LLMContext(BaseModel):
     risk_score: float | None = None
     risk_level: str | None = None
     timeline_events: list[dict[str, Any]] = Field(default_factory=list)
+    # v2.0: Dataset security context (optional — present when incident involves dataset activity)
+    dataset_context: dict[str, Any] = Field(default_factory=dict)
 
 
 class LLMProvider(ABC):
@@ -137,14 +139,88 @@ class LocalDevLLMProvider(LLMProvider):
                 )
             )
 
-        # Recommended immediate analyst attention
-        findings.append(
-            FindingItem(
-                finding_type=FindingType.RECOMMENDED,
-                description="Analyst should inspect raw endpoint logs, review process trees, and verify user authorization for identified activities.",
-                evidence=["advisory_guidance"],
+        # Dataset-specific findings (v2.0) — only when dataset context is present
+        ds_ctx = context.dataset_context
+        is_dataset_incident = bool(ds_ctx)
+        if is_dataset_incident:
+            dataset_name = ds_ctx.get("dataset_name", "unknown dataset")
+            sensitivity = ds_ctx.get("sensitivity", "UNKNOWN")
+            actor = ds_ctx.get("actor", context.entity_id or "unknown")
+            records = ds_ctx.get("records_accessed", 0)
+            sensitive_cols = ds_ctx.get("sensitive_columns", [])
+            export_dest = ds_ctx.get("export_destination")
+            operations = ds_ctx.get("operations", [])
+
+            # OBSERVED: Dataset access
+            findings.append(
+                FindingItem(
+                    finding_type=FindingType.OBSERVED,
+                    description=(
+                        f"Actor '{actor}' performed operations {operations} on dataset '{dataset_name}' "
+                        f"(sensitivity: {sensitivity}), accessing {records:,} records"
+                        + (f" including sensitive columns: {sensitive_cols}" if sensitive_cols else "") + "."
+                    ),
+                    evidence=[
+                        f"dataset={dataset_name}",
+                        f"sensitivity={sensitivity}",
+                        f"records_accessed={records}",
+                        f"sensitive_columns={sensitive_cols}",
+                        f"actor={actor}",
+                    ],
+                )
             )
-        )
+
+            if export_dest:
+                findings.append(
+                    FindingItem(
+                        finding_type=FindingType.OBSERVED,
+                        description=f"Dataset '{dataset_name}' was exported to destination: '{export_dest}'. This may represent data staging for exfiltration.",
+                        evidence=[f"export_destination={export_dest}", f"dataset={dataset_name}"],
+                    )
+                )
+
+            # INFERRED: Exfiltration pattern
+            if export_dest or (records > 10000 and sensitive_cols):
+                findings.append(
+                    FindingItem(
+                        finding_type=FindingType.INFERRED,
+                        description=(
+                            f"The sequence of bulk sensitive data access followed by export from '{dataset_name}' is "
+                            f"consistent with a data exfiltration pattern (MITRE T1530, T1567). "
+                            f"Actor '{actor}' accessed {records:,} records including PII/financial fields before export."
+                        ),
+                        evidence=[
+                            "pattern=access+export_sequence",
+                            f"mitre=T1530,T1567",
+                            f"records={records}",
+                        ],
+                    )
+                )
+
+        # Recommended immediate analyst attention
+        if is_dataset_incident:
+            ds_ctx = context.dataset_context
+            dataset_name = ds_ctx.get("dataset_name", "dataset")
+            actor = ds_ctx.get("actor", context.entity_id or "unknown")
+            findings.append(
+                FindingItem(
+                    finding_type=FindingType.RECOMMENDED,
+                    description=(
+                        f"Analyst should restrict access to '{dataset_name}' and review actor '{actor}' session logs. "
+                        f"Consider proposing restrict_dataset_access simulation response and revoking actor credentials if unauthorized access is confirmed. "
+                        f"ANALYST APPROVAL REQUIRED for any real action. This is advisory only."
+                    ),
+                    evidence=["advisory_guidance", "simulation_only"],
+                )
+            )
+        else:
+            findings.append(
+                FindingItem(
+                    finding_type=FindingType.RECOMMENDED,
+                    description="Analyst should inspect raw endpoint logs, review process trees, and verify user authorization for identified activities.",
+                    evidence=["advisory_guidance"],
+                )
+            )
 
         # 2. Timeline construction
         timeline: list[TimelineItem] = []
@@ -201,35 +277,61 @@ class LocalDevLLMProvider(LLMProvider):
         response_actions: list[RecommendedAction] = []
         target = context.entity_id or "unassigned_host"
 
-        response_actions.append(
-            RecommendedAction(
-                action_type="isolate_endpoint",
-                description=f"Propose network isolation for endpoint '{target}' to contain lateral spread pending investigation.",
-                target_entity=target,
-                analyst_approval_required=True,
-                inert_proposed_only=True,
+        if context.dataset_context:
+            ds_name = context.dataset_context.get("dataset_name", "unknown dataset")
+            ds_actor = context.dataset_context.get("actor", target)
+            response_actions.append(
+                RecommendedAction(
+                    action_type="restrict_dataset_access",
+                    description=(
+                        f"SIMULATION ONLY: Propose restricting access to '{ds_name}' to read-only / quarantine mode. "
+                        f"No real permissions, ACLs, or files would be modified without analyst approval. "
+                        f"ANALYST APPROVAL REQUIRED."
+                    ),
+                    target_entity=ds_name,
+                    analyst_approval_required=True,
+                    inert_proposed_only=True,
+                )
             )
-        )
+            response_actions.append(
+                RecommendedAction(
+                    action_type="revoke_credentials",
+                    description=f"Propose credential revocation for actor '{ds_actor}' if unauthorized dataset access is confirmed. ANALYST APPROVAL REQUIRED.",
+                    target_entity=ds_actor,
+                    analyst_approval_required=True,
+                    inert_proposed_only=True,
+                )
+            )
+        else:
+            response_actions.append(
+                RecommendedAction(
+                    action_type="isolate_endpoint",
+                    description=f"Propose network isolation for endpoint '{target}' to contain lateral spread pending investigation.",
+                    target_entity=target,
+                    analyst_approval_required=True,
+                    inert_proposed_only=True,
+                )
+            )
 
-        response_actions.append(
-            RecommendedAction(
-                action_type="quarantine_file",
-                description="Propose suspicious binary quarantine if artifacts or malicious hashes are confirmed on host.",
-                target_entity=target,
-                analyst_approval_required=True,
-                inert_proposed_only=True,
+            response_actions.append(
+                RecommendedAction(
+                    action_type="quarantine_file",
+                    description="Propose suspicious binary quarantine if artifacts or malicious hashes are confirmed on host.",
+                    target_entity=target,
+                    analyst_approval_required=True,
+                    inert_proposed_only=True,
+                )
             )
-        )
 
-        response_actions.append(
-            RecommendedAction(
-                action_type="revoke_credentials",
-                description="Propose credential revocation and forced password reset for impacted user accounts.",
-                target_entity=target,
-                analyst_approval_required=True,
-                inert_proposed_only=True,
+            response_actions.append(
+                RecommendedAction(
+                    action_type="revoke_credentials",
+                    description="Propose credential revocation and forced password reset for impacted user accounts.",
+                    target_entity=target,
+                    analyst_approval_required=True,
+                    inert_proposed_only=True,
+                )
             )
-        )
 
         # 6. Confidence calculation based on evidence completeness
         confidence_factors = 0.5  # Base confidence

@@ -13,6 +13,14 @@ from .cases import (
     EvidenceType,
 )
 from .correlation import CorrelatableAlert, Correlation, CorrelationMatch, CorrelationStatus
+from .dataset import (
+    ColumnProfile,
+    DataFormat,
+    DatasetActivity,
+    DatasetAsset,
+    DatasetOperation,
+    SensitivityLevel,
+)
 from .events import NormalizedEvent
 from .incidents import Incident, IncidentStatus
 from .investigation import (
@@ -38,10 +46,15 @@ __all__ = [
     "CaseResolution",
     "CaseStatus",
     "CaseTimelineEntry",
+    "ColumnProfile",
     "CorrelatableAlert",
     "Correlation",
     "CorrelationMatch",
     "CorrelationStatus",
+    "DataFormat",
+    "DatasetActivity",
+    "DatasetAsset",
+    "DatasetOperation",
     "DetectionMatch",
     "DetectionRule",
     "EvidenceReference",
@@ -64,6 +77,7 @@ __all__ = [
     "ResponseActionType",
     "RiskAssessment",
     "RiskLevel",
+    "SensitivityLevel",
     "ThreatClassification",
     "ThreatIntelResult",
     "TimelineItem",

@@ -124,7 +124,7 @@ def test_all_rules_have_unique_ids() -> None:
     rules = get_default_rules()
     ids = [r.rule_id for r in rules]
     assert len(ids) == len(set(ids))
-    assert len(rules) == 5
+    assert len(rules) == 11
 
 
 def test_evidence_contains_no_raw_metadata() -> None:

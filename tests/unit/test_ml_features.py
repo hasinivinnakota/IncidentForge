@@ -86,8 +86,8 @@ def test_extract_features_no_secrets_leakage() -> None:
 
 
 def test_feature_names_matches_schema_version() -> None:
-    assert FEATURE_VERSION == "v1.0"
-    assert len(FEATURE_NAMES) == 12
+    assert FEATURE_VERSION == "v2.0"
+    assert len(FEATURE_NAMES) == 23
 
 
 def test_reason_codes_generation_deterministic() -> None:

@@ -30,7 +30,7 @@ def test_train_and_evaluate_generates_metadata() -> None:
         meta = train_and_evaluate(seed=42, artifacts_dir=Path(tmp_dir))
         assert meta["model_name"] == "baseline_logistic_regression"
         assert meta["model_version"] == "v1.0"
-        assert meta["feature_version"] == "v1.0"
+        assert meta["feature_version"] == "v2.0"
         assert "evaluation_metrics" in meta
         metrics = meta["evaluation_metrics"]
         assert "precision" in metrics

@@ -24,7 +24,7 @@
 
 ## Overview
 
-IncidentForge is a defensive cybersecurity operations and investigation platform designed to manage the full lifecycle of a security event—from raw telemetry ingestion and rule-based detection to multi-alert correlation, machine learning risk prioritization, threat-intelligence enrichment, advisory AI-assisted investigation, SOC case management, and analyst-controlled response simulation.
+IncidentForge is a defensive cybersecurity operations and investigation platform designed to manage the full lifecycle of a security event—from raw telemetry ingestion and rule-based detection to multi-alert correlation, machine learning risk prioritization, threat-intelligence enrichment, advisory AI-assisted investigation, SOC case management, analyst-controlled response simulation, and dataset security monitoring (v2).
 
 Modern Security Operations Centers often struggle with disparate tools that emit fragmented alerts, leaving analysts to perform manual forensic correlation, ad-hoc risk assessment, and disjointed triage across separate consoles. IncidentForge addresses this operational friction by uniting the data plane and decision plane into an integrated, deterministic pipeline. Telemetry ingested into the system is normalized into canonical schemas, correlated into coherent attack sequences, enriched with indicator intelligence, and presented through an analyst-centric workspace.
 
@@ -44,7 +44,7 @@ Security operations teams operate in an environment characterized by asymmetric 
 6. **Uncontrolled Automation Risks:** Full automated response without guardrails introduces severe operational and availability risks to production systems.
 7. **Lack of Auditability:** Ad-hoc investigative steps and unrecorded containment attempts degrade forensic accountability and incident post-mortems.
 
-IncidentForge systematically mitigates these challenges by establishing deterministic alert normalization, temporal attack-sequence correlation, mathematically transparent risk prioritization, automated IOC extraction, and an immutable audit trail governing every state transition.
+IncidentForge systematically mitigates these challenges by establishing deterministic alert normalization, temporal attack-sequence correlation, mathematically transparent risk prioritization, automated IOC extraction, and an immutable audit trail governing every state transition, now spanning both endpoint and structured dataset activity.
 
 ---
 
