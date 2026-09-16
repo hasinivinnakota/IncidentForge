@@ -293,15 +293,16 @@ class LocalDevLLMProvider(LLMProvider):
                     inert_proposed_only=True,
                 )
             )
-            response_actions.append(
-                RecommendedAction(
-                    action_type="revoke_credentials",
-                    description=f"Propose credential revocation for actor '{ds_actor}' if unauthorized dataset access is confirmed. ANALYST APPROVAL REQUIRED.",
-                    target_entity=ds_actor,
-                    analyst_approval_required=True,
-                    inert_proposed_only=True,
+            if ds_actor:
+                response_actions.append(
+                    RecommendedAction(
+                        action_type="revoke_credentials",
+                        description=f"Propose credential revocation for actor '{ds_actor}' if unauthorized dataset access is confirmed. ANALYST APPROVAL REQUIRED.",
+                        target_entity=ds_actor,
+                        analyst_approval_required=True,
+                        inert_proposed_only=True,
+                    )
                 )
-            )
         else:
             response_actions.append(
                 RecommendedAction(

@@ -33,7 +33,9 @@ class DatasetService:
         Never stores row-level data; only stores column metadata, schema hash,
         record counts, and sensitivity classification.
         """
-        asset = DatasetProfiler.profile_file(file_path, dataset_id=dataset_id, name=name)
+        asset = DatasetProfiler.profile_file(
+            file_path, dataset_id=dataset_id, name=name, persist_path=False
+        )
         self._repo.create_or_update_dataset(asset)
         logger.info(
             "Dataset registered",

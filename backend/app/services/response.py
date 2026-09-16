@@ -175,12 +175,21 @@ class ResponseService:
             return self._record_to_domain(existing)
 
         now = datetime.now(timezone.utc)
+        
+        target_entity = None
+        if action_type == "restrict_dataset_access":
+            for tag in incident.tags:
+                if "dataset:ds-" in tag:
+                    target_entity = "dataset:" + tag.split("dataset:")[1]
+                    break
+
         domain_action = ResponseAction(
             action_id=action_id,
             incident_id=clean_incident_id,
             action_type=action_type,
             status=ResponseActionStatus.PROPOSED,
             requested_at=now,
+            result=f"Target: {target_entity}" if target_entity else None,
         )
 
         write_res = self.response_repository.create_response_action(domain_action)

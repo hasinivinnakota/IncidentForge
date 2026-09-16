@@ -21,6 +21,7 @@ from .dataset import (
     DatasetOperation,
     SensitivityLevel,
 )
+from .dataset_overview import DatasetOverview
 from .events import NormalizedEvent
 from .incidents import Incident, IncidentStatus
 from .investigation import (
@@ -55,6 +56,7 @@ __all__ = [
     "DatasetActivity",
     "DatasetAsset",
     "DatasetOperation",
+    "DatasetOverview",
     "DetectionMatch",
     "DetectionRule",
     "EvidenceReference",

@@ -30,11 +30,23 @@ import {
   UserRound,
   X,
   CheckCircle2,
+  ShieldCheck,
+  LockKeyhole,
+  TriangleAlert,
+  BarChart3,
+  Briefcase,
+  FolderSearch
 } from "lucide-react"
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -62,10 +74,8 @@ import {
   type ResponseAction,
   type DatasetAsset,
   type DatasetActivity,
-  type Severity as SeverityType,
 } from "@/lib/api"
 import {
-  HeatmapPanel,
   IncidentStatusPanel,
   InvestigationQueuePanel,
   MitrePanel,
@@ -149,7 +159,7 @@ function formatTime(isoString?: string | null): string {
 // ---------------------------------------------------------------------------
 
 const navGroups = [
-  { label: "OPERATIONS", items: [["Overview", LayoutDashboard], ["Alerts", Bell], ["Correlations", GitBranch], ["Dataset Assets", Database], ["Dataset Activity", Activity]] },
+  { label: "OPERATIONS", items: [["Overview", LayoutDashboard], ["Alerts", Bell], ["Correlations", GitBranch], ["Dataset Assets", Database], ["Dataset Security", Shield]] },
   { label: "INVESTIGATION", items: [["Incidents", ShieldAlert], ["Cases", BriefcaseBusiness], ["AI Investigator", Bot], ["Threat Intelligence", Crosshair]] },
   { label: "RESPONSE", items: [["Response", Siren]] },
   { label: "SYSTEM", items: [["System", Settings]] },
@@ -285,6 +295,22 @@ function Topbar({
       </div>
       <div className="flex items-center gap-2">
         <Search size={13} className="text-slate-500" />
+        {page === "Dataset Security" && (
+          <label className="cursor-pointer ml-4 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white shadow-lg shadow-orange-500/20 transition hover:bg-orange-400">
+            + Upload Dataset
+            <input
+              type="file"
+              className="hidden"
+              accept=".csv,.json,.jsonl,.parquet"
+              onChange={(e) => {
+                const file = e.target.files?.[0] ?? null;
+                if (file) {
+                  window.dispatchEvent(new CustomEvent('dataset-upload', { detail: file }));
+                }
+              }}
+            />
+          </label>
+        )}
         <button
           onClick={onCommand}
           className="hidden h-8 items-center justify-center gap-12 rounded-none border border-white/[0.08] bg-white/[0.025] px-3 text-xs text-slate-500 transition hover:border-orange-400/30 hover:text-slate-300 md:inline-flex"
@@ -560,6 +586,7 @@ function IncidentsTable({
   incidents: Incident[]
   openIncident: (id: string) => void
   loading: boolean
+  onDatasetSelect: (dataset: DatasetAsset) => void
 }) {
   return (
     <Panel
@@ -652,7 +679,7 @@ function IncidentsTable({
 // Live Alert Stream
 // ---------------------------------------------------------------------------
 
-function AlertStream({ alerts, loading }: { alerts: Alert[]; loading: boolean }) {
+function AlertStream({ alerts, loading, emptyMessage }: { alerts: Alert[]; loading: boolean; emptyMessage?: string }) {
   return (
     <Panel
       title="Live alert stream"
@@ -797,7 +824,7 @@ function IncidentWorkspace({
   }
 
   // Response action handlers (Phase 10: simulation only, strict transitions)
-  const handleCreateAction = async (actionType: ResponseActionType) => {
+  const handleCreateAction = async (actionType: any) => {
     setActionProcessing(actionType)
     try {
       await responseApi.createResponseAction(incidentId, { action_type: actionType, actor: "analyst" })
@@ -1295,7 +1322,7 @@ function IncidentWorkspace({
                           {f.finding_type}
                         </span>
                       </div>
-                      <p className="mt-1 text-xs text-slate-200">{f.description}</p>
+                      <p className="mt-1 text-xs text-slate-200">{String(f.description)}</p>
                     </div>
                   ))}
                 </div>
@@ -1564,7 +1591,7 @@ function IncidentWorkspace({
 // Overview Main Screen (Connected to Live API)
 // ---------------------------------------------------------------------------
 
-function Overview({
+function Overview({ onDatasetSelect,
   openIncident,
   alerts,
   incidents,
@@ -1580,6 +1607,7 @@ function Overview({
   cases: Case[]
   isOnline: boolean
   loading: boolean
+  onDatasetSelect: (dataset: DatasetAsset) => void
 }) {
   const criticalCount = incidents.filter((i) => i.severity >= 12).length
 
@@ -1627,7 +1655,7 @@ function Overview({
       <Pipeline />
 
       <div className="grid gap-4 xl:grid-cols-[1.7fr_0.8fr]">
-        <IncidentsTable incidents={incidents} openIncident={openIncident} loading={loading} />
+        <IncidentsTable incidents={incidents} openIncident={openIncident} loading={loading} onDatasetSelect={onDatasetSelect} />
         <AlertStream alerts={alerts} loading={loading} />
       </div>
     </div>
@@ -1638,7 +1666,8 @@ function Overview({
 // Dataset Security Views (v2.0)
 // ---------------------------------------------------------------------------
 
-function DatasetAssetsView({ datasets, loading }: { datasets: DatasetAsset[]; loading: boolean }) {
+function DatasetAssetsView({
+  onDatasetSelect, datasets, loading }: { onDatasetSelect: any; datasets: DatasetAsset[]; loading: boolean }) {
   if (loading) return <div className="p-8 text-center text-sm text-slate-500 animate-pulse">Loading dataset catalog...</div>
 
   return (
@@ -1698,12 +1727,410 @@ function DatasetAssetsView({ datasets, loading }: { datasets: DatasetAsset[]; lo
   )
 }
 
-function DatasetActivityView({ activities, loading }: { activities: DatasetActivity[]; loading: boolean }) {
-  if (loading) return <div className="p-8 text-center text-sm text-slate-500 animate-pulse">Loading activity stream...</div>
+function DatasetSecurityView({
+  overview,
+  loading,
+  openIncident,
+  onSimulate
+}: {
+  overview: any | null
+  loading: boolean
+  openIncident: (id: string) => void
+  onSimulate: () => void
+}) {
+  if (loading) return <div className="p-8 text-center text-sm text-slate-500 animate-pulse">Loading dataset security view...</div>
+  if (!overview) {
+    return (
+      <div className="flex min-h-[65vh] flex-col items-center justify-center rounded-lg border border-dashed border-white/10 bg-[#111519]/60 text-center">
+        <div className="mb-4 rounded-full border border-orange-400/20 bg-orange-400/5 p-4 text-orange-300">
+          <Database size={22} />
+        </div>
+        <h2 className="text-base font-semibold text-white">No dataset selected</h2>
+        <p className="mt-2 max-w-sm text-xs leading-relaxed text-slate-500">
+          Upload a dataset or select one from Dataset Assets to begin security analysis.
+        </p>
+      </div>
+    )
+  }
+
+  const selectedDatasetId = overview.dataset_id;
+  const datasetAssessment = overview.assessment;
+  
+  // Use backend-enforced scoped data directly
+  const filteredActivities = overview.activities;
+  const filteredAlerts = overview.alerts;
+  const filteredIncidents = overview.incidents;
+  const filteredCorrelations = overview.correlations;
+  const filteredCases = overview.cases;
+  
+  const asset = overview.asset;
+  const securityScore = datasetAssessment.security_score;
+  const findings = datasetAssessment.findings || [];
+  
+  // Calculate finding severities
+  const highFindings = findings.filter((f: any) => f.severity === "CRITICAL" || f.severity === "HIGH").length;
+  const medFindings = findings.filter((f: any) => f.severity === "MEDIUM").length;
+  const lowFindings = findings.filter((f: any) => f.severity === "LOW" || f.severity === "INFO").length;
+  
+  // Group activities by type
+  const eventTypes = filteredActivities.reduce((acc: Record<string, number>, a: any) => {
+    acc[a.operation] = (acc[a.operation] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  
+  const eventData = Object.entries(eventTypes).map(([name, value]) => ({ name, value }));
+
+  // Sensitivity Pie Chart Data
+  const sensitivityData = [
+    { name: 'Sensitive', value: asset.sensitive_columns?.length || 0, color: '#f87171' },
+    { name: 'Non-sensitive', value: asset.column_count - (asset.sensitive_columns?.length || 0), color: '#34d399' }
+  ].filter(d => d.value > 0);
+
+  // Finding Bar Chart Data
+  const findingData = [
+    { name: 'HIGH', count: highFindings, fill: '#f87171' },
+    { name: 'MEDIUM', count: medFindings, fill: '#fbbf24' },
+    { name: 'LOW', count: lowFindings, fill: '#34d399' }
+  ].filter(d => d.count > 0);
+  
+  // Activity Trend Data
+  const activityTrendData = filteredActivities.length > 0 ? (
+    // Simple chronological mapping (assuming sorted)
+    filteredActivities.slice(-15).map((a: any) => ({
+       time: new Date(a.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+       events: a.records_accessed || 1
+    }))
+  ) : [];
 
   return (
-    <div className="space-y-4">
-      <Panel title="Dataset Activity Stream">
+    <div className="space-y-6">
+      {/* Header Panel */}
+      <Panel className="bg-[#111519] border-none shadow-sm relative overflow-hidden">
+        {selectedDatasetId === 'demo-financial-records' && (
+           <div className="absolute top-0 right-0 bg-blue-500/20 text-blue-300 text-[9px] font-bold px-3 py-1 uppercase tracking-widest rounded-bl-lg">
+              SYNTHETIC / DEMO
+           </div>
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-4 p-5">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-500/10 text-orange-400">
+              <Database size={24} />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-white flex items-center gap-3">
+                 {asset.name}
+              </h2>
+              <div className="mt-1 flex items-center gap-3 text-xs font-mono text-slate-400">
+                <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-slate-500"/> {asset.format.toUpperCase()}</span>
+                <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-slate-500"/> {asset.record_count.toLocaleString()} records</span>
+                <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-slate-500"/> {asset.column_count} columns</span>
+                <span className={`flex items-center gap-1.5 ${asset.sensitivity === 'HIGH' || asset.sensitivity === 'CRITICAL' ? 'text-red-400' : 'text-amber-400'}`}><span className={`h-1.5 w-1.5 rounded-full ${asset.sensitivity === 'HIGH' || asset.sensitivity === 'CRITICAL' ? 'bg-red-400' : 'bg-amber-400'}`}/> {asset.sensitivity} sensitivity</span>
+              </div>
+              <div className="mt-3 text-xs text-slate-300">
+                 <strong className="text-orange-300">{asset.sensitivity} SENSITIVITY DATASET.</strong> {asset.sensitive_columns?.length || 0} sensitive columns detected across {asset.column_count} columns.
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-col items-end gap-2">
+             <button 
+                onClick={onSimulate}
+                className="flex items-center gap-2 rounded bg-orange-500 hover:bg-orange-600 px-3 py-1.5 text-xs font-semibold text-white shadow transition-colors"
+             >
+                <Play size={12} fill="currentColor" />
+                Simulate Dataset Security Activity
+             </button>
+             <div className="text-[9px] text-slate-500 uppercase tracking-widest text-right max-w-[200px]">
+                Injects deterministic demo telemetry through SOC pipeline
+             </div>
+          </div>
+        </div>
+      </Panel>
+      
+      {/* Security Score Explanation */}
+      {findings.length > 0 && (
+         <div className="rounded border border-red-400/20 bg-red-400/5 p-4 text-xs">
+            <h3 className="font-semibold text-red-400 mb-2 uppercase tracking-wider text-[10px]">Primary Risk Factors</h3>
+            <ul className="space-y-1">
+               {findings.map((f: any, i: number) => (
+                  <li key={i} className="flex gap-2 items-start text-slate-300">
+                     <span className="text-red-400 mt-0.5">•</span>
+                     <span>
+                        <strong className="text-slate-200">{f.title}</strong>: {String(f.description)}
+                     </span>
+                  </li>
+               ))}
+            </ul>
+         </div>
+      )}
+
+
+      {/* Hero Metric Widgets (6 Cards) */}
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
+        <div className="group relative overflow-hidden rounded-xl border border-white/5 bg-[#121516] p-4 shadow-sm transition hover:border-emerald-400/30">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+            <span>Security Score</span>
+            <ShieldCheck size={14} />
+          </div>
+          <div className="mt-2 text-3xl font-mono text-white">{securityScore.score}<span className="text-sm text-slate-500">/100</span></div>
+          <div className="mt-1 text-[10px] text-slate-400">Risk: <span className="text-orange-400">{securityScore.risk_level}</span></div>
+          <div className="absolute -bottom-2 -right-2 text-emerald-400/5"><ShieldCheck size={64} /></div>
+        </div>
+        
+        <div className="group relative overflow-hidden rounded-xl border border-white/5 bg-[#121516] p-4 shadow-sm transition hover:border-red-400/30">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-red-400">
+            <span>Sensitive Fields</span>
+            <LockKeyhole size={14} />
+          </div>
+          <div className="mt-2 text-3xl font-mono text-white">{asset.sensitive_columns?.length || 0}</div>
+          <div className="mt-1 text-[10px] text-slate-400">Of {asset.column_count} total</div>
+          <div className="absolute -bottom-2 -right-2 text-red-400/5"><LockKeyhole size={64} /></div>
+        </div>
+        
+        <div className="group relative overflow-hidden rounded-xl border border-white/5 bg-[#121516] p-4 shadow-sm transition hover:border-amber-400/30">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-amber-400">
+            <span>Security Findings</span>
+            <TriangleAlert size={14} />
+          </div>
+          <div className="mt-2 text-3xl font-mono text-white">{findings.length}</div>
+          <div className="mt-1 text-[10px] font-mono text-slate-400">
+            <span className="text-red-400">{highFindings} H</span> · <span className="text-amber-400">{medFindings} M</span> · <span className="text-emerald-400">{lowFindings} L</span>
+          </div>
+          <div className="absolute -bottom-2 -right-2 text-amber-400/5"><TriangleAlert size={64} /></div>
+        </div>
+        
+        <div className="group relative overflow-hidden rounded-xl border border-orange-400/20 bg-orange-400/5 p-4 shadow-sm transition hover:bg-orange-400/10">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-orange-400">
+            <span>Dataset Alerts</span>
+            <Bell size={14} />
+          </div>
+          <div className="mt-2 text-3xl font-mono text-orange-300">{filteredAlerts.length}</div>
+          <div className="mt-1 text-[10px] text-orange-400/70">Active monitoring</div>
+          <div className="absolute -bottom-2 -right-2 text-orange-400/5"><Bell size={64} /></div>
+        </div>
+        
+        <div className="group relative overflow-hidden rounded-xl border border-red-400/20 bg-red-400/5 p-4 shadow-sm transition hover:bg-red-400/10">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-red-400">
+            <span>Dataset Incidents</span>
+            <ShieldAlert size={14} />
+          </div>
+          <div className="mt-2 text-3xl font-mono text-red-300">{filteredIncidents.length}</div>
+          <div className="mt-1 text-[10px] text-red-400/70">Requires attention</div>
+          <div className="absolute -bottom-2 -right-2 text-red-400/5"><ShieldAlert size={64} /></div>
+        </div>
+        
+        <div className="group relative overflow-hidden rounded-xl border border-white/5 bg-[#121516] p-4 shadow-sm transition hover:border-blue-400/30">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-blue-400">
+            <span>Open Cases</span>
+            <Briefcase size={14} />
+          </div>
+          <div className="mt-2 text-3xl font-mono text-white">{filteredCases.length}</div>
+          <div className="mt-1 text-[10px] text-slate-400">Analyst review</div>
+          <div className="absolute -bottom-2 -right-2 text-blue-400/5"><Briefcase size={64} /></div>
+        </div>
+      </div>
+
+      {/* Analytics Grid */}
+      
+      {/* ROW 1 */}
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Panel title="Dataset Activity" className="min-h-[250px]">
+          <div className="p-4 flex flex-col h-full">
+            <p className="mb-4 text-[10px] uppercase text-slate-500 tracking-wider">Dataset telemetry observed over time</p>
+            {activityTrendData.length > 0 ? (
+              <div className="h-48 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={activityTrendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorActivity" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                    <XAxis dataKey="time" stroke="#64748b" fontSize={10} tickMargin={10} />
+                    <YAxis stroke="#64748b" fontSize={10} tickMargin={10} />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
+                      itemStyle={{ color: '#f8fafc', fontSize: '12px' }}
+                      labelStyle={{ color: '#94a3b8', fontSize: '10px' }}
+                    />
+                    <Area type="monotone" dataKey="events" stroke="#f97316" fillOpacity={1} fill="url(#colorActivity)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="flex flex-1 items-center justify-center text-xs text-slate-500">
+                No dataset activity recorded
+              </div>
+            )}
+          </div>
+        </Panel>
+        
+        <Panel title="Security Findings" className="min-h-[250px]">
+          <div className="p-4 flex flex-col h-full">
+            <p className="mb-4 text-[10px] uppercase text-slate-500 tracking-wider">Findings by severity</p>
+            {findingData.length > 0 ? (
+              <div className="h-48 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={findingData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" horizontal={true} vertical={false} />
+                    <XAxis type="number" stroke="#64748b" fontSize={10} />
+                    <YAxis dataKey="name" type="category" stroke="#64748b" fontSize={10} width={60} />
+                    <Tooltip 
+                      cursor={{fill: '#ffffff05'}}
+                      contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
+                    />
+                    <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={20}>
+                      {findingData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.fill} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="flex flex-1 items-center justify-center text-xs text-slate-500">
+                No security findings recorded
+              </div>
+            )}
+          </div>
+        </Panel>
+      </div>
+
+      {/* ROW 2 */}
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Panel title="Sensitivity Distribution" className="min-h-[250px]">
+          <div className="p-4 flex flex-col h-full">
+             <p className="mb-4 text-[10px] uppercase text-slate-500 tracking-wider">Classification of dataset columns</p>
+             {sensitivityData.length > 0 ? (
+               <div className="flex h-48 w-full items-center justify-center">
+                 <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={sensitivityData}
+                        innerRadius={60}
+                        outerRadius={80}
+                        paddingAngle={5}
+                        dataKey="value"
+                      >
+                        {sensitivityData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
+                      />
+                      <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '10px', color: '#94a3b8' }}/>
+                    </PieChart>
+                 </ResponsiveContainer>
+               </div>
+             ) : (
+               <div className="flex flex-1 items-center justify-center text-xs text-slate-500">
+                 No sensitivity data available
+               </div>
+             )}
+          </div>
+        </Panel>
+        
+        <Panel title="Dataset Event Types" className="min-h-[250px]">
+          <div className="p-4 flex flex-col h-full">
+             <p className="mb-4 text-[10px] uppercase text-slate-500 tracking-wider">Counts for dataset activity types</p>
+             {eventData.length > 0 ? (
+               <div className="space-y-3">
+                 {eventData.map(ev => (
+                    <div key={ev.name} className="flex items-center justify-between border-b border-white/5 pb-2 text-sm">
+                      <span className="text-slate-300">{ev.name.replace(/_/g, ' ')}</span>
+                      <span className="font-mono text-orange-400 font-semibold">{ev.value}</span>
+                    </div>
+                 ))}
+               </div>
+             ) : (
+               <div className="flex flex-1 items-center justify-center text-xs text-slate-500">
+                 No dataset events recorded
+               </div>
+             )}
+          </div>
+        </Panel>
+      </div>
+
+      {/* ROW 3 */}
+      <Panel title="Dataset Security Pipeline" className="bg-[#121516] border-none shadow-sm">
+        <div className="p-6">
+          <div className="relative flex w-full items-center justify-between">
+             <div className="absolute left-0 top-1/2 h-0.5 w-full -translate-y-1/2 bg-white/5" />
+             
+             {[
+               { id: 'UPLOAD', label: 'Upload', status: 'completed' },
+               { id: 'PROFILE', label: 'Profiling', status: 'completed' },
+               { id: 'ACTIVITY', label: 'Activity', status: filteredActivities.length > 0 ? 'active' : 'nodata' },
+               { id: 'DETECT', label: 'Detection', status: filteredAlerts.length > 0 ? 'active' : 'notrigger' },
+               { id: 'CORRELATE', label: 'Correlation', status: filteredCorrelations.length > 0 ? 'active' : 'notrigger' },
+               { id: 'INCIDENT', label: 'Incident', status: filteredIncidents.length > 0 ? 'active' : 'noincident' },
+               { id: 'ML', label: 'ML Risk', status: 'nodata' },
+               { id: 'AI', label: 'AI Investigate', status: 'nodata' },
+               { id: 'CASE', label: 'Case', status: filteredCases.length > 0 ? 'active' : 'notrigger' },
+               { id: 'RESPONSE', label: 'Response', status: 'notrigger' },
+             ].map((stage, i) => (
+                <div key={stage.id} className="relative z-10 flex flex-col items-center gap-2 bg-[#121516] px-2">
+                   <div className={`flex h-8 w-8 items-center justify-center rounded-full border-2 text-[10px] font-bold ${
+                      stage.status === 'completed' ? 'border-emerald-500 bg-emerald-500/20 text-emerald-400' :
+                      stage.status === 'active' ? 'border-orange-500 bg-orange-500/20 text-orange-400' :
+                      'border-slate-700 bg-slate-800 text-slate-500'
+                   }`}>
+                     {stage.status === 'completed' ? '✓' : (i + 1)}
+                   </div>
+                   <div className="text-center">
+                     <div className={`text-[9px] font-bold uppercase tracking-wider ${stage.status === 'active' || stage.status === 'completed' ? 'text-slate-200' : 'text-slate-500'}`}>
+                       {stage.label}
+                     </div>
+                     <div className="mt-0.5 text-[8px] uppercase tracking-widest text-slate-500">
+                       {stage.status === 'notrigger' ? 'Not Triggered' : stage.status === 'noincident' ? 'No Incident' : stage.status === 'nodata' ? 'No Data' : stage.status}
+                     </div>
+                   </div>
+                </div>
+             ))}
+          </div>
+        </div>
+      </Panel>
+
+      {/* ROW 4 */}
+      <div className="grid gap-4 xl:grid-cols-2">
+         <Panel title="ML Risk" className="min-h-[200px]">
+           <div className="p-4 flex flex-col h-full">
+              <p className="mb-4 text-[10px] uppercase text-slate-500 tracking-wider">Dataset-aware ML risk prioritization</p>
+              <div className="flex flex-1 items-center justify-center text-xs text-slate-500">
+                 No ML risk assessment available
+              </div>
+           </div>
+         </Panel>
+
+         <Panel title="Threat Activity" className="min-h-[200px]">
+           <div className="p-4 flex flex-col h-full">
+              <p className="mb-4 text-[10px] uppercase text-slate-500 tracking-wider">Dataset-scoped threat activity</p>
+              <div className="flex flex-1 items-center gap-8 justify-center">
+                 <div className="text-center">
+                    <div className="text-3xl font-mono font-bold text-orange-400">{filteredAlerts.length}</div>
+                    <div className="text-[10px] uppercase tracking-widest text-slate-500 mt-1">Alerts</div>
+                 </div>
+                 <div className="h-12 w-px bg-white/10" />
+                 <div className="text-center">
+                    <div className="text-3xl font-mono font-bold text-amber-400">{filteredCorrelations.length}</div>
+                    <div className="text-[10px] uppercase tracking-widest text-slate-500 mt-1">Correlations</div>
+                 </div>
+                 <div className="h-12 w-px bg-white/10" />
+                 <div className="text-center">
+                    <div className="text-3xl font-mono font-bold text-red-400">{filteredIncidents.length}</div>
+                    <div className="text-[10px] uppercase tracking-widest text-slate-500 mt-1">Incidents</div>
+                 </div>
+              </div>
+           </div>
+         </Panel>
+      </div>
+
+      {/* Detailed Panels */}
+      
+      {/* Activity Table */}
+      <Panel title="Recent Dataset Activity">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs text-slate-300">
             <thead className="border-b border-white/[0.06] bg-black/20 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
@@ -1711,35 +2138,25 @@ function DatasetActivityView({ activities, loading }: { activities: DatasetActiv
                 <th className="px-4 py-3">Timestamp</th>
                 <th className="px-4 py-3">Actor</th>
                 <th className="px-4 py-3">Operation</th>
-                <th className="px-4 py-3">Dataset</th>
-                <th className="px-4 py-3 text-right">Records Accessed</th>
+                <th className="px-4 py-3 text-right">Records</th>
                 <th className="px-4 py-3">Context</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[0.04]">
-              {activities.length === 0 ? (
+              {filteredActivities.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">No activity recorded.</td>
+                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">No dataset activity recorded.</td>
                 </tr>
               ) : (
-                activities.map((act) => (
+                filteredActivities.slice(0, 10).map((act: any) => (
                   <tr key={act.activity_id} className="transition-colors hover:bg-white/[0.02]">
-                    <td className="px-4 py-3 font-mono text-[11px] text-slate-400">
-                      {formatTime(act.timestamp)}
-                    </td>
+                    <td className="px-4 py-3 font-mono text-[10px] text-slate-400">{new Date(act.timestamp).toLocaleTimeString()}</td>
                     <td className="px-4 py-3 text-slate-200">{act.actor}</td>
-                    <td className="px-4 py-3">
-                      <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-orange-200">
-                        {act.operation}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-300">{act.dataset_name}</td>
-                    <td className="px-4 py-3 text-right font-mono text-[11px] text-slate-400">
-                      {act.records_accessed.toLocaleString()}
-                    </td>
+                    <td className="px-4 py-3"><span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-orange-200">{act.operation}</span></td>
+                    <td className="px-4 py-3 text-right font-mono text-[10px] text-slate-400">{act.records_accessed.toLocaleString()}</td>
                     <td className="px-4 py-3 text-[10px] text-slate-500">
-                      {act.export_destination && <span className="text-red-300 block">Export: {act.export_destination}</span>}
-                      {act.sensitive_columns.length > 0 && <span className="text-orange-300 block">Cols: {act.sensitive_columns.join(', ')}</span>}
+                      {act.export_destination && <span className="block text-red-300">Dest: {act.export_destination}</span>}
+                      {act.sensitive_columns?.length > 0 && <span className="block text-orange-300">Cols: {act.sensitive_columns.join(', ')}</span>}
                     </td>
                   </tr>
                 ))
@@ -1748,9 +2165,25 @@ function DatasetActivityView({ activities, loading }: { activities: DatasetActiv
           </table>
         </div>
       </Panel>
+
+      <div className="grid gap-4 xl:grid-cols-[1.7fr_0.8fr]">
+        <IncidentsTable 
+           incidents={filteredIncidents} 
+           openIncident={openIncident} 
+           loading={loading} 
+           onDatasetSelect={() => {}}
+        />
+        <AlertStream 
+           alerts={filteredAlerts} 
+           loading={loading} 
+        />
+      </div>
+
     </div>
   )
 }
+
+
 
 function Placeholder({ page }: { page: string }) {
   return (
@@ -1786,6 +2219,33 @@ export function IncidentForgeDashboard() {
   const [cases, setCases] = useState<Case[]>([])
   const [datasets, setDatasets] = useState<DatasetAsset[]>([])
   const [datasetActivities, setDatasetActivities] = useState<DatasetActivity[]>([])
+  const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null)
+  const [datasetAssessment, setDatasetAssessment] = useState<any | null>(null)
+  const [datasetOverview, setDatasetOverview] = useState<any | null>(null)
+
+  
+  const handleDatasetSelect = async (dataset: DatasetAsset) => {
+    setSelectedDatasetId(dataset.dataset_id);
+    setPage("Dataset Security");
+    setRefreshing(true);
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000"
+      const response = await fetch(`${baseUrl}/api/v1/data-assets/${dataset.dataset_id}/overview`, {
+        method: "GET"
+      });
+      if (response.ok) {
+         const data = await response.json();
+         setDatasetOverview(data);
+      } else {
+         setDatasetOverview(null);
+      }
+    } catch (err) {
+      console.error(err);
+      setDatasetOverview(null);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const fetchLiveTelemetry = useCallback(async () => {
     setRefreshing(true)
@@ -1815,6 +2275,44 @@ export function IncidentForgeDashboard() {
       setRefreshing(false)
     }
   }, [])
+
+  
+  useEffect(() => {
+    const handleUpload = async (e: Event) => {
+      const file = (e as CustomEvent).detail as File;
+      setRefreshing(true);
+      try {
+        const formData = new FormData()
+        formData.append("file", file)
+        const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000"
+        const response = await fetch(`${baseUrl}/api/v1/data-assets/upload`, {
+          method: "POST",
+          body: formData,
+        })
+        const data = await response.json()
+        if (response.ok) {
+          const dsId = data.dataset_id || data.assessment?.dataset_id;
+          setSelectedDatasetId(dsId);
+          
+          const overviewRes = await fetch(`${baseUrl}/api/v1/data-assets/${dsId}/overview`);
+          if (overviewRes.ok) {
+              setDatasetOverview(await overviewRes.json());
+          }
+          
+          setPage("Dataset Security");
+          fetchLiveTelemetry();
+        } else {
+          alert("Upload failed: " + (data.detail || "Unknown error"));
+        }
+      } catch (err) {
+        alert("Upload failed");
+      } finally {
+        setRefreshing(false);
+      }
+    };
+    window.addEventListener('dataset-upload', handleUpload);
+    return () => window.removeEventListener('dataset-upload', handleUpload);
+  }, [fetchLiveTelemetry]);
 
   useEffect(() => {
     fetchLiveTelemetry()
@@ -1850,7 +2348,7 @@ export function IncidentForgeDashboard() {
           {incidentId ? (
             <IncidentWorkspace incidentId={incidentId} close={() => setIncidentId(null)} />
           ) : page === "Overview" ? (
-            <Overview
+            <Overview onDatasetSelect={handleDatasetSelect}
               openIncident={setIncidentId}
               alerts={alerts}
               incidents={incidents}
@@ -1860,9 +2358,20 @@ export function IncidentForgeDashboard() {
               loading={refreshing && alerts.length === 0}
             />
           ) : page === "Dataset Assets" ? (
-            <DatasetAssetsView datasets={datasets} loading={refreshing && datasets.length === 0} />
-          ) : page === "Dataset Activity" ? (
-            <DatasetActivityView activities={datasetActivities} loading={refreshing && datasetActivities.length === 0} />
+            <DatasetAssetsView datasets={datasets} loading={refreshing && datasets.length === 0} onDatasetSelect={handleDatasetSelect} />
+          ) : page === "Dataset Security" ? (
+            <DatasetSecurityView overview={datasetOverview} loading={refreshing && !datasetOverview} openIncident={setIncidentId} onSimulate={async () => {
+              setRefreshing(true);
+              try {
+                 await datasetsApi.simulateDemoAttack();
+                 setTimeout(() => fetchLiveTelemetry(), 1500);
+              } catch (e) {
+                 console.error(e);
+                 alert("Simulation failed");
+              } finally {
+                 setTimeout(() => setRefreshing(false), 2000);
+              }
+            }} />
           ) : (
             <Placeholder page={page} />
           )}

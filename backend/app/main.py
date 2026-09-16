@@ -14,6 +14,7 @@ from .api.routes import (
     correlations,
     data_assets,
     dataset_events,
+    dataset_upload,
     events,
     health,
     incidents,
@@ -62,6 +63,7 @@ app.include_router(response.router)
 # v2: Dataset Security Operations
 app.include_router(data_assets.router)
 app.include_router(dataset_events.router)
+app.include_router(dataset_upload.router)
 
 
 @app.exception_handler(RequestValidationError)
