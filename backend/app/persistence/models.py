@@ -198,6 +198,19 @@ class EvidenceReferenceRecord(SQLModel, table=True):
     added_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class SystemSettings(SQLModel, table=True):
+    """Persisted dashboard settings for the local development deployment."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    profile_name: str = Field(default="Admin User", max_length=256)
+    profile_email: str = Field(default="admin@edms.com", max_length=320)
+    tariff_rates_json: str = "[]"
+    shifts_json: str = "[]"
+    high_threshold: int = Field(default=50, ge=1, le=99)
+    critical_threshold: int = Field(default=75, ge=2, le=100)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class PersistenceDatasetAsset(SQLModel, table=True):
     __tablename__ = "dataset_asset"
     id: int | None = Field(default=None, primary_key=True)

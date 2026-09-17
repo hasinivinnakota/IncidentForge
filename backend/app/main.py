@@ -21,6 +21,7 @@ from .api.routes import (
     investigations,
     response,
     risk,
+    settings as settings_routes,
     threat_intel,
 )
 from .config import get_settings
@@ -56,6 +57,7 @@ app.include_router(alerts.router)
 app.include_router(correlations.router)
 app.include_router(incidents.router)
 app.include_router(risk.router)
+app.include_router(settings_routes.router)
 app.include_router(threat_intel.router)
 app.include_router(investigations.router)
 app.include_router(cases.router)

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Trash2, Plus, DollarSign, Clock, Calculator } from "lucide-react"
+import { settingsApi } from "@/lib/api"
 
 interface OperationSettingsProps {
   isAdmin: boolean
@@ -87,6 +88,14 @@ export function OperationSettings({ isAdmin }: OperationSettingsProps) {
       operatingDays: ["Mon", "Tue", "Wed", "Thu", "Fri"],
     },
   ])
+  const [status, setStatus] = useState<string | null>(null)
+
+  useEffect(() => {
+    settingsApi.get().then((settings) => {
+      setTariffRates(settings.tariff_rates as unknown as TariffRate[])
+      setShifts(settings.shifts as unknown as Shift[])
+    }).catch(() => setStatus("Unable to load saved operation settings."))
+  }, [])
 
   const addTariffRate = () => {
     if (newTariff.name && newTariff.rate) {
@@ -154,6 +163,15 @@ export function OperationSettings({ isAdmin }: OperationSettingsProps) {
         return shift
       }),
     )
+  }
+
+  const saveChanges = async () => {
+    try {
+      await settingsApi.update({ tariff_rates: tariffRates, shifts })
+      setStatus("Operation settings saved.")
+    } catch {
+      setStatus("Unable to save operation settings.")
+    }
   }
 
   return (
@@ -428,11 +446,13 @@ export function OperationSettings({ isAdmin }: OperationSettingsProps) {
       <div className="flex justify-end pt-4 border-t border-[#2A2A2A]">
         <Button
           disabled={!isAdmin}
+          onClick={saveChanges}
           className="bg-[#FF6B00] hover:bg-[#E55A00] text-black disabled:opacity-50 disabled:cursor-not-allowed h-10 sm:h-11 px-6 touch-manipulation w-full sm:w-auto"
         >
           Save All Changes
         </Button>
       </div>
+      {status && <p className="text-right text-xs text-[#9A9A9A]">{status}</p>}
     </div>
   )
 }

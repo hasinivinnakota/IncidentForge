@@ -4,6 +4,69 @@ def test_health(api_client) -> None:
     assert response.json()["status"] == "ok"
 
 
+def test_system_settings_are_loaded_and_persisted(api_client) -> None:
+    initial = api_client.get("/api/v1/settings")
+    assert initial.status_code == 200
+    assert initial.json()["high_threshold"] == 50
+
+    updated = api_client.patch(
+        "/api/v1/settings",
+        json={"profile_name": "SOC Admin", "high_threshold": 55},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["profile_name"] == "SOC Admin"
+    assert updated.json()["high_threshold"] == 55
+
+    reloaded = api_client.get("/api/v1/settings")
+    assert reloaded.json()["profile_name"] == "SOC Admin"
+    assert reloaded.json()["high_threshold"] == 55
+
+
+def test_system_settings_reject_invalid_threshold_order(api_client) -> None:
+    response = api_client.patch("/api/v1/settings", json={"high_threshold": 90})
+    assert response.status_code == 422
+
+
+def test_dataset_simulation_creates_backend_risk_and_case(api_client) -> None:
+    asset_response = api_client.post(
+        "/api/v1/data-assets",
+        json={
+            "dataset_id": "dataset-case-regression",
+            "name": "dataset-case-regression.csv",
+            "format": "csv",
+            "file_path": "synthetic/dataset-case-regression.csv",
+            "size_bytes": 2048,
+            "record_count": 1200,
+            "column_count": 3,
+            "columns": [],
+            "sensitive_columns": [],
+            "sensitivity": "LOW",
+            "schema_hash": "regression-schema",
+        },
+    )
+    assert asset_response.status_code in {200, 201}
+
+    simulation = api_client.post("/api/v1/data-assets/dataset-case-regression/simulate")
+    assert simulation.status_code == 202
+    result = simulation.json()
+    assert result["events_generated"] == 4
+    assert any(item["risk_score"] is not None for item in result["pipeline_results"])
+
+    overview = api_client.get("/api/v1/data-assets/dataset-case-regression/overview")
+    assert overview.status_code == 200
+    data = overview.json()
+    assert data["risk_assessments"]
+    assert data["cases"]
+    assert "dataset:dataset-case-regression" in data["cases"][0]["tags"]
+
+    before_repeat = data["activities"]
+    repeated = api_client.post("/api/v1/data-assets/dataset-case-regression/simulate")
+    assert repeated.status_code == 202
+    after_repeat = api_client.get("/api/v1/data-assets/dataset-case-regression/overview")
+    assert len(after_repeat.json()["activities"]) == len(before_repeat)
+    assert after_repeat.json()["risk_assessments"][0]["risk_score"] == data["risk_assessments"][0]["risk_score"]
+
+
 def test_example_event(api_client) -> None:
     response = api_client.get("/api/v1/events/example")
     assert response.status_code == 200

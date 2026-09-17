@@ -1932,11 +1932,11 @@ function DatasetSecurityView({
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
         <div className="group relative overflow-hidden rounded-xl border border-white/5 bg-[#121516] p-4 shadow-sm transition hover:border-emerald-400/30">
           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-            <span>Security Score</span>
+            <span>Posture Score</span>
             <ShieldCheck size={14} />
           </div>
           <div className="mt-2 text-3xl font-mono text-white">{securityScore.score}<span className="text-sm text-slate-500">/100</span></div>
-          <div className="mt-1 text-[10px] text-slate-400">Risk: <span className="text-orange-400">{securityScore.risk_level}</span></div>
+          <div className="mt-1 text-[10px] text-slate-400">Posture: <span className="text-orange-400">{securityScore.risk_level}</span></div>
           <div className="absolute -bottom-2 -right-2 text-emerald-400/5"><ShieldCheck size={64} /></div>
         </div>
         
@@ -1997,7 +1997,7 @@ function DatasetSecurityView({
       
       {/* ROW 1 */}
       <div className="grid gap-4 xl:grid-cols-2">
-        <Panel title="Security Posture Score" className="min-h-[250px]">
+        <Panel title="Dataset Posture Health" className="min-h-[250px]">
           <div className="flex flex-col justify-between p-6 h-full">
             <div>
               <div className="flex items-baseline gap-4">
@@ -2016,8 +2016,8 @@ function DatasetSecurityView({
                   {securityScore.risk_level} RISK
                 </span>
               </div>
-              <p className="mt-4 text-xs leading-relaxed text-slate-400">
-                Rule-based security score derived from column profiling, PII detection, and data sensitivity. Deductions applied for identified risks.
+                <p className="mt-4 text-xs leading-relaxed text-slate-400">
+                Deterministic backend score derived from column profiling, PII detection, and data sensitivity. Higher is healthier; incident threat risk is shown separately below.
               </p>
             </div>
             
@@ -2165,7 +2165,7 @@ function DatasetSecurityView({
       {/* ROW 4: ML Risk & Risk Distribution */}
       <div className="grid gap-4 xl:grid-cols-2">
          {latestAssessment ? (
-         <Panel title="Dataset-aware ML Risk" className="min-h-[220px]">
+         <Panel title="Dataset-aware Incident Threat Risk" className="min-h-[220px]">
            <div className="p-4 flex flex-col h-full justify-between">
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -2193,7 +2193,7 @@ function DatasetSecurityView({
            </div>
          </Panel>
          ) : (
-         <Panel title="Dataset-aware ML Risk" className="min-h-[220px]">
+         <Panel title="Dataset-aware Incident Threat Risk" className="min-h-[220px]">
            <div className="p-6 flex flex-col items-center justify-center h-full text-center">
              <ShieldAlert size={28} className="text-slate-600 mb-2" />
              <div className="text-xs font-semibold text-slate-400">No ML Risk Assessment Yet</div>
@@ -2758,6 +2758,10 @@ export function IncidentForgeDashboard() {
         setCollapsed={setCollapsed}
         page={page}
         setPage={(p) => {
+          if (p === "System") {
+            window.location.href = "/settings"
+            return
+          }
           setPage(p)
           setIncidentId(null)
         }}

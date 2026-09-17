@@ -13,7 +13,7 @@ Does NOT expose raw dataset row contents.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -21,6 +21,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session
 
 from ...database import get_session
+from ...models.cases import CasePriority
 from ...models.dataset import DatasetAsset, DatasetActivity
 from ...models.dataset_assessment import DatasetSecurityAssessment, DatasetSimulationResult
 from ...models.processing import PipelineResult
@@ -49,6 +50,7 @@ from ...services.pipeline import EventPipeline
 from ...services.processing import EventProcessingService
 from ...services.risk import RiskScoringService
 from ...services.threat_intel import ThreatIntelligenceService
+from ...services.cases import CaseService
 from ...adapters.dataset import DatasetActivityAdapter
 
 router = APIRouter(prefix="/api/v1/data-assets", tags=["data-assets"])
@@ -249,15 +251,18 @@ def simulate_dataset_attack(
             detail=f"Dataset '{asset_id}' not found",
         )
 
-    base_ts = datetime.now(timezone.utc)
+    # A simulation represents one reproducible scenario for this dataset.
+    # Reusing the dataset creation time prevents each button click from
+    # changing the incident feature window and risk score.
+    base_ts = asset.created_at.astimezone(timezone.utc).replace(second=0, microsecond=0)
     sim_actor = "external-user-demo"
     sim_host = "external-workstation-99"
     sim_src_ip = "198.51.100.42"   # TEST-NET — clearly synthetic
     sim_dst_ip = "203.0.113.99"    # TEST-NET — clearly synthetic
 
-    # Unique suffix per run to avoid UNIQUE constraint on re-simulation
+    # Stable suffix makes repeated simulations resolve to the same events.
     import hashlib
-    run_hash = hashlib.sha256(f"{asset_id}-{base_ts.isoformat()}".encode()).hexdigest()[:8]
+    run_hash = hashlib.sha256(asset_id.encode()).hexdigest()[:8]
 
     # Sensitive columns from the actual registered asset (sanitized names only)
     sensitive_cols = asset.sensitive_columns[:5]
@@ -278,7 +283,7 @@ def simulate_dataset_attack(
         ),
         DatasetActivity(
             activity_id=f"sim-{asset_id[:8]}-{run_hash}-col-access",
-            timestamp=base_ts.replace(minute=(base_ts.minute + 3) % 60),
+            timestamp=base_ts + timedelta(minutes=3),
             dataset_id=asset_id,
             dataset_name=asset.name,
             operation="sensitive_column_access",
@@ -291,7 +296,7 @@ def simulate_dataset_attack(
         ),
         DatasetActivity(
             activity_id=f"sim-{asset_id[:8]}-{run_hash}-bulk",
-            timestamp=base_ts.replace(minute=(base_ts.minute + 8) % 60),
+            timestamp=base_ts + timedelta(minutes=8),
             dataset_id=asset_id,
             dataset_name=asset.name,
             operation="bulk_access",
@@ -304,7 +309,7 @@ def simulate_dataset_attack(
         ),
         DatasetActivity(
             activity_id=f"sim-{asset_id[:8]}-{run_hash}-export",
-            timestamp=base_ts.replace(minute=(base_ts.minute + 14) % 60),
+            timestamp=base_ts + timedelta(minutes=14),
             dataset_id=asset_id,
             dataset_name=asset.name,
             operation="dataset_exported",
@@ -346,14 +351,50 @@ def simulate_dataset_attack(
             pipeline_results.append(result_dict)
             alerts_created += len(result_dict.get("alerts", []))
             correlations_created += len(result_dict.get("correlations", []))
-            if result_dict.get("incident"):
-                incidents_created += 1
+            incidents_created += len(result_dict.get("incidents_created", []))
         except SQLAlchemyError as exc:
             logger.exception("Pipeline failed for sim event %s", event.event_id)
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Dataset simulation pipeline error",
             ) from exc
+
+    # Seed one analyst case per affected incident. IDs are deterministic per
+    # incident, so repeated simulations enrich the same case instead of
+    # creating duplicate records.
+    case_service = CaseService(
+        case_repository=CaseRepository(session),
+        event_repository=EventRepository(session),
+        incident_repository=IncidentRepository(session),
+        investigation_repository=InvestigationRepository(session),
+    )
+    affected_incident_ids = sorted({
+        incident_id
+        for result in pipeline_results
+        for incident_id in result.get("incidents_created", []) + result.get("incidents_updated", [])
+    })
+    for incident_id in affected_incident_ids:
+        incident = IncidentRepository(session).get_incident(incident_id)
+        if incident is None:
+            continue
+        priority = (
+            CasePriority.CRITICAL if incident.severity >= 12
+            else CasePriority.HIGH if incident.severity >= 8
+            else CasePriority.MEDIUM if incident.severity >= 4
+            else CasePriority.LOW
+        )
+        case_service.create_case(
+            title=f"Dataset security case: {asset.name}",
+            description=(
+                f"Dataset security activity generated incident {incident_id}. "
+                "Review the linked alerts, correlations, risk assessment, and export activity."
+            ),
+            severity=incident.severity,
+            priority=priority,
+            incident_id=incident_id,
+            tags=[f"dataset:{asset_id}", "simulated-dataset-activity"],
+            actor="system",
+        )
 
     logger.info(
         "Dataset attack simulation complete",
@@ -382,7 +423,6 @@ from .correlations import _to_domain_correlation
 from .incidents import _to_domain_incident
 from .risk import _to_domain_assessment
 from .threat_intel import _to_domain_result as _to_domain_intel
-from ...services.cases import CaseService
 from ...services.response import ResponseService
 
 @router.get("/{asset_id}/overview", response_model=DatasetOverview)
@@ -410,7 +450,12 @@ def get_dataset_overview(
     ti_repo = ThreatIntelRepository(session)
     
     # Services for cases and response which return domain models natively
-    case_svc = CaseService(CaseRepository(session), IncidentRepository(session), EventRepository(session), InvestigationRepository(session))
+    case_svc = CaseService(
+        CaseRepository(session),
+        EventRepository(session),
+        IncidentRepository(session),
+        InvestigationRepository(session),
+    )
     resp_svc = ResponseService(ResponseActionRepository(session), IncidentRepository(session))
     
     urn_tag = f"dataset:{asset_id}"
