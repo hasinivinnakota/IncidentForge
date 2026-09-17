@@ -1731,12 +1731,16 @@ function DatasetSecurityView({
   overview,
   loading,
   openIncident,
-  onSimulate
+  onSimulate,
+  simulating = false,
+  simulationFeedback = null,
 }: {
   overview: any | null
   loading: boolean
   openIncident: (id: string) => void
   onSimulate: () => void
+  simulating?: boolean
+  simulationFeedback?: { type: 'success' | 'error'; message: string } | null
 }) {
   if (loading) return <div className="p-8 text-center text-sm text-slate-500 animate-pulse">Loading dataset security view...</div>
   if (!overview) {
@@ -1757,11 +1761,13 @@ function DatasetSecurityView({
   const datasetAssessment = overview.assessment;
   
   // Use backend-enforced scoped data directly
-  const filteredActivities = overview.activities;
-  const filteredAlerts = overview.alerts;
-  const filteredIncidents = overview.incidents;
-  const filteredCorrelations = overview.correlations;
-  const filteredCases = overview.cases;
+  const filteredActivities = overview.activities || [];
+  const filteredAlerts = overview.alerts || [];
+  const filteredIncidents = overview.incidents || [];
+  const filteredCorrelations = overview.correlations || [];
+  const filteredCases = overview.cases || [];
+  const riskAssessments = overview.risk_assessments || [];
+  const responseRecords = overview.response_records || [];
   
   const asset = overview.asset;
   const securityScore = datasetAssessment.security_score;
@@ -1780,11 +1786,13 @@ function DatasetSecurityView({
   
   const eventData = Object.entries(eventTypes).map(([name, value]) => ({ name, value }));
 
-  // Sensitivity Pie Chart Data
-  const sensitivityData = [
-    { name: 'Sensitive', value: asset.sensitive_columns?.length || 0, color: '#f87171' },
-    { name: 'Non-sensitive', value: asset.column_count - (asset.sensitive_columns?.length || 0), color: '#34d399' }
-  ].filter(d => d.value > 0);
+  // Sensitivity Bar Chart Data
+  const sensitiveCount = asset.sensitive_columns?.length || 0;
+  const totalCount = asset.column_count;
+  const nonSensitiveCount = totalCount - sensitiveCount;
+  
+  const sensitivePct = totalCount > 0 ? Math.round((sensitiveCount / totalCount) * 100) : 0;
+  const nonSensitivePct = totalCount > 0 ? Math.round((nonSensitiveCount / totalCount) * 100) : 0;
 
   // Finding Bar Chart Data
   const findingData = [
@@ -1802,8 +1810,50 @@ function DatasetSecurityView({
     }))
   ) : [];
 
+  // Consistent Latest ML Risk Assessment (index 0 is newest due to backend sort)
+  const latestAssessment = riskAssessments.length > 0 ? riskAssessments[0] : null;
+
+  // Dataset-specific Incident ML Risk Distribution
+  const riskLevelCounts = { critical: 0, high: 0, medium: 0, low: 0 };
+  riskAssessments.forEach((r: any) => {
+    const lvl = (r.risk_level || "").toLowerCase();
+    if (lvl in riskLevelCounts) {
+      riskLevelCounts[lvl as keyof typeof riskLevelCounts] += 1;
+    }
+  });
+
+  const mlRiskDistributionData = [
+    { level: "CRITICAL", count: riskLevelCounts.critical, fill: "#ef4444" },
+    { level: "HIGH", count: riskLevelCounts.high, fill: "#f97316" },
+    { level: "MEDIUM", count: riskLevelCounts.medium, fill: "#eab308" },
+    { level: "LOW", count: riskLevelCounts.low, fill: "#10b981" },
+  ];
+
   return (
     <div className="space-y-6">
+      {/* Simulation Feedback Alert */}
+      {simulationFeedback && (
+        <div className={`flex items-center justify-between rounded-lg border px-4 py-3 text-xs ${
+          simulationFeedback.type === 'success' 
+            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' 
+            : 'border-red-500/30 bg-red-500/10 text-red-300'
+        }`}>
+          <div className="flex items-center gap-2">
+            {simulationFeedback.type === 'success' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+            <span>{simulationFeedback.message}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Repeated Simulation Informational Notice */}
+      <div className="flex items-start gap-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs text-amber-300/90">
+        <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-400" />
+        <div className="leading-relaxed">
+          <span className="font-semibold text-amber-200">Simulation Accumulation Notice: </span>
+          Each simulation run injects 4 synthetic SOC events within the 30-minute correlation window. Running repeated simulations will accumulate alerts and events on existing dataset incidents, which legitimately raises incident-level ML risk scores.
+        </div>
+      </div>
+
       {/* Header Panel */}
       <Panel className="bg-[#111519] border-none shadow-sm relative overflow-hidden">
         {selectedDatasetId === 'demo-financial-records' && (
@@ -1834,13 +1884,27 @@ function DatasetSecurityView({
           <div className="flex flex-col items-end gap-2">
              <button 
                 onClick={onSimulate}
-                className="flex items-center gap-2 rounded bg-orange-500 hover:bg-orange-600 px-3 py-1.5 text-xs font-semibold text-white shadow transition-colors"
+                disabled={simulating}
+                className={`flex items-center gap-2 rounded px-3 py-1.5 text-xs font-semibold text-white shadow transition-all ${
+                  simulating 
+                    ? "cursor-not-allowed bg-slate-700 text-slate-400 opacity-60" 
+                    : "bg-orange-500 hover:bg-orange-600 active:scale-95"
+                }`}
              >
-                <Play size={12} fill="currentColor" />
-                Simulate Dataset Security Activity
+                {simulating ? (
+                  <>
+                    <RefreshCw size={12} className="animate-spin" />
+                    Simulating Attack...
+                  </>
+                ) : (
+                  <>
+                    <Play size={12} fill="currentColor" />
+                    Simulate Dataset Security Activity
+                  </>
+                )}
              </button>
              <div className="text-[9px] text-slate-500 uppercase tracking-widest text-right max-w-[200px]">
-                Injects deterministic demo telemetry through SOC pipeline
+                {simulating ? "Processing through SOC pipeline..." : "Injects deterministic demo telemetry through SOC pipeline"}
              </div>
           </div>
         </div>
@@ -1933,42 +1997,51 @@ function DatasetSecurityView({
       
       {/* ROW 1 */}
       <div className="grid gap-4 xl:grid-cols-2">
-        <Panel title="Dataset Activity" className="min-h-[250px]">
-          <div className="p-4 flex flex-col h-full">
-            <p className="mb-4 text-[10px] uppercase text-slate-500 tracking-wider">Dataset telemetry observed over time</p>
-            {activityTrendData.length > 0 ? (
-              <div className="h-48 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={activityTrendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorActivity" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
-                    <XAxis dataKey="time" stroke="#64748b" fontSize={10} tickMargin={10} />
-                    <YAxis stroke="#64748b" fontSize={10} tickMargin={10} />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
-                      itemStyle={{ color: '#f8fafc', fontSize: '12px' }}
-                      labelStyle={{ color: '#94a3b8', fontSize: '10px' }}
-                    />
-                    <Area type="monotone" dataKey="events" stroke="#f97316" fillOpacity={1} fill="url(#colorActivity)" />
-                  </AreaChart>
-                </ResponsiveContainer>
+        <Panel title="Security Posture Score" className="min-h-[250px]">
+          <div className="flex flex-col justify-between p-6 h-full">
+            <div>
+              <div className="flex items-baseline gap-4">
+                <span className={`text-6xl font-bold font-mono ${
+                  securityScore.score >= 80 ? 'text-emerald-400' :
+                  securityScore.score >= 60 ? 'text-amber-400' : 'text-red-400'
+                }`}>
+                  {securityScore.score}
+                </span>
+                <span className="text-slate-500 text-sm font-semibold uppercase tracking-wider">/ 100</span>
+                <span className={`px-2.5 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${
+                  securityScore.risk_level === 'LOW' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                  securityScore.risk_level === 'MEDIUM' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                  'bg-red-500/10 text-red-400 border border-red-500/20'
+                }`}>
+                  {securityScore.risk_level} RISK
+                </span>
               </div>
-            ) : (
-              <div className="flex flex-1 items-center justify-center text-xs text-slate-500">
-                No dataset activity recorded
-              </div>
-            )}
+              <p className="mt-4 text-xs leading-relaxed text-slate-400">
+                Rule-based security score derived from column profiling, PII detection, and data sensitivity. Deductions applied for identified risks.
+              </p>
+            </div>
+            
+            <div className="mt-6 border-t border-white/5 pt-4">
+              <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wider mb-2">Deductions Applied</div>
+              {securityScore.contributing_factors?.length > 0 ? (
+                <div className="space-y-1.5">
+                  {securityScore.contributing_factors.map((factor: any, i: number) => (
+                    <div key={i} className="flex justify-between items-center text-xs">
+                      <span className="text-slate-300">{factor.description}</span>
+                      <span className="font-mono text-red-400 font-medium">-{factor.deduction}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-500 italic">No deductions applied. Clean baseline.</div>
+              )}
+            </div>
           </div>
         </Panel>
         
-        <Panel title="Security Findings" className="min-h-[250px]">
+        <Panel title="Identified Findings" className="min-h-[250px]">
           <div className="p-4 flex flex-col h-full">
-            <p className="mb-4 text-[10px] uppercase text-slate-500 tracking-wider">Findings by severity</p>
+            <p className="mb-4 text-[10px] uppercase text-slate-500 tracking-wider">Security and privacy risks flagged by severity</p>
             {findingData.length > 0 ? (
               <div className="h-48 w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -2002,27 +2075,27 @@ function DatasetSecurityView({
         <Panel title="Sensitivity Distribution" className="min-h-[250px]">
           <div className="p-4 flex flex-col h-full">
              <p className="mb-4 text-[10px] uppercase text-slate-500 tracking-wider">Classification of dataset columns</p>
-             {sensitivityData.length > 0 ? (
-               <div className="flex h-48 w-full items-center justify-center">
-                 <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={sensitivityData}
-                        innerRadius={60}
-                        outerRadius={80}
-                        paddingAngle={5}
-                        dataKey="value"
-                      >
-                        {sensitivityData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
-                      />
-                      <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '10px', color: '#94a3b8' }}/>
-                    </PieChart>
-                 </ResponsiveContainer>
+             {totalCount > 0 ? (
+               <div className="flex h-48 w-full flex-col justify-center gap-6">
+                 <div>
+                   <div className="mb-1 flex items-center justify-between text-xs font-semibold text-red-400">
+                     <span>HIGH / SENSITIVE</span>
+                     <span>{sensitiveCount} fields · {sensitivePct}%</span>
+                   </div>
+                   <div className="h-3 w-full overflow-hidden rounded bg-white/5">
+                     <div className="h-full bg-red-400 transition-all" style={{ width: `${sensitivePct}%` }} />
+                   </div>
+                 </div>
+                 
+                 <div>
+                   <div className="mb-1 flex items-center justify-between text-xs font-semibold text-emerald-400">
+                     <span>LOW / NON-SENSITIVE</span>
+                     <span>{nonSensitiveCount} fields · {nonSensitivePct}%</span>
+                   </div>
+                   <div className="h-3 w-full overflow-hidden rounded bg-white/5">
+                     <div className="h-full bg-emerald-400 transition-all" style={{ width: `${nonSensitivePct}%` }} />
+                   </div>
+                 </div>
                </div>
              ) : (
                <div className="flex flex-1 items-center justify-center text-xs text-slate-500">
@@ -2032,10 +2105,10 @@ function DatasetSecurityView({
           </div>
         </Panel>
         
+        {eventData.length > 0 && (
         <Panel title="Dataset Event Types" className="min-h-[250px]">
           <div className="p-4 flex flex-col h-full">
              <p className="mb-4 text-[10px] uppercase text-slate-500 tracking-wider">Counts for dataset activity types</p>
-             {eventData.length > 0 ? (
                <div className="space-y-3">
                  {eventData.map(ev => (
                     <div key={ev.name} className="flex items-center justify-between border-b border-white/5 pb-2 text-sm">
@@ -2044,13 +2117,9 @@ function DatasetSecurityView({
                     </div>
                  ))}
                </div>
-             ) : (
-               <div className="flex flex-1 items-center justify-center text-xs text-slate-500">
-                 No dataset events recorded
-               </div>
-             )}
           </div>
         </Panel>
+        )}
       </div>
 
       {/* ROW 3 */}
@@ -2062,14 +2131,14 @@ function DatasetSecurityView({
              {[
                { id: 'UPLOAD', label: 'Upload', status: 'completed' },
                { id: 'PROFILE', label: 'Profiling', status: 'completed' },
-               { id: 'ACTIVITY', label: 'Activity', status: filteredActivities.length > 0 ? 'active' : 'nodata' },
-               { id: 'DETECT', label: 'Detection', status: filteredAlerts.length > 0 ? 'active' : 'notrigger' },
-               { id: 'CORRELATE', label: 'Correlation', status: filteredCorrelations.length > 0 ? 'active' : 'notrigger' },
-               { id: 'INCIDENT', label: 'Incident', status: filteredIncidents.length > 0 ? 'active' : 'noincident' },
-               { id: 'ML', label: 'ML Risk', status: 'nodata' },
-               { id: 'AI', label: 'AI Investigate', status: 'nodata' },
-               { id: 'CASE', label: 'Case', status: filteredCases.length > 0 ? 'active' : 'notrigger' },
-               { id: 'RESPONSE', label: 'Response', status: 'notrigger' },
+               { id: 'ACTIVITY', label: 'Activity', status: filteredActivities.length > 0 ? 'completed' : 'nodata' },
+               { id: 'DETECT', label: 'Detection', status: filteredAlerts.length > 0 ? 'completed' : 'notrigger' },
+               { id: 'CORRELATE', label: 'Correlation', status: filteredCorrelations.length > 0 ? 'completed' : 'notrigger' },
+               { id: 'INCIDENT', label: 'Incident', status: filteredIncidents.length > 0 ? 'completed' : 'noincident' },
+               { id: 'ML', label: 'ML Risk', status: riskAssessments.length > 0 ? 'completed' : 'nodata' },
+               { id: 'AI', label: 'AI Investigate', status: filteredIncidents.some((i: any) => i.tags && i.tags.some((t: string) => t.includes('inv-'))) ? 'completed' : 'nodata' },
+               { id: 'CASE', label: 'Case', status: filteredCases.length > 0 ? 'completed' : 'notrigger' },
+               { id: 'RESPONSE', label: 'Response', status: responseRecords.length > 0 ? 'completed' : 'notrigger' },
              ].map((stage, i) => (
                 <div key={stage.id} className="relative z-10 flex flex-col items-center gap-2 bg-[#121516] px-2">
                    <div className={`flex h-8 w-8 items-center justify-center rounded-full border-2 text-[10px] font-bold ${
@@ -2093,43 +2162,115 @@ function DatasetSecurityView({
         </div>
       </Panel>
 
-      {/* ROW 4 */}
+      {/* ROW 4: ML Risk & Risk Distribution */}
       <div className="grid gap-4 xl:grid-cols-2">
-         <Panel title="ML Risk" className="min-h-[200px]">
-           <div className="p-4 flex flex-col h-full">
-              <p className="mb-4 text-[10px] uppercase text-slate-500 tracking-wider">Dataset-aware ML risk prioritization</p>
-              <div className="flex flex-1 items-center justify-center text-xs text-slate-500">
-                 No ML risk assessment available
+         {latestAssessment ? (
+         <Panel title="Dataset-aware ML Risk" className="min-h-[220px]">
+           <div className="p-4 flex flex-col h-full justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[10px] uppercase text-slate-500 tracking-wider">Latest ML Risk Assessment</p>
+                  <span className="font-mono text-[9px] text-slate-400">
+                    Incident: {latestAssessment.incident_id?.slice(0, 16)}...
+                  </span>
+                </div>
+                <div className="flex items-center justify-center gap-8 py-4">
+                    <div className="text-center">
+                       <div className="text-4xl font-mono font-bold text-red-400">{latestAssessment.risk_score}</div>
+                       <div className="text-[10px] uppercase tracking-widest text-slate-500 mt-1">Risk Score</div>
+                    </div>
+                    <div className="h-12 w-px bg-white/10" />
+                    <div className="text-center">
+                       <div className="text-xl font-mono font-bold text-slate-200 uppercase">{latestAssessment.risk_level}</div>
+                       <div className="text-[10px] uppercase tracking-widest text-slate-500 mt-1">Risk Level</div>
+                    </div>
+                </div>
+              </div>
+              <div className="border-t border-white/5 pt-2 flex items-center justify-between text-[10px] text-slate-500 font-mono">
+                <span>Model: {latestAssessment.model_name || "LogisticRegression"}</span>
+                <span>Scored: {new Date(latestAssessment.scored_at).toLocaleTimeString()}</span>
               </div>
            </div>
          </Panel>
+         ) : (
+         <Panel title="Dataset-aware ML Risk" className="min-h-[220px]">
+           <div className="p-6 flex flex-col items-center justify-center h-full text-center">
+             <ShieldAlert size={28} className="text-slate-600 mb-2" />
+             <div className="text-xs font-semibold text-slate-400">No ML Risk Assessment Yet</div>
+             <p className="mt-1 text-[11px] text-slate-500 max-w-xs">
+               Simulate activity to trigger detections, correlation, incident creation, and ML risk evaluation.
+             </p>
+           </div>
+         </Panel>
+         )}
 
-         <Panel title="Threat Activity" className="min-h-[200px]">
+         {/* Dataset Incident ML Risk Distribution */}
+         <Panel title="Dataset Incident Risk Distribution" className="min-h-[220px]">
            <div className="p-4 flex flex-col h-full">
-              <p className="mb-4 text-[10px] uppercase text-slate-500 tracking-wider">Dataset-scoped threat activity</p>
-              <div className="flex flex-1 items-center gap-8 justify-center">
-                 <div className="text-center">
-                    <div className="text-3xl font-mono font-bold text-orange-400">{filteredAlerts.length}</div>
-                    <div className="text-[10px] uppercase tracking-widest text-slate-500 mt-1">Alerts</div>
-                 </div>
-                 <div className="h-12 w-px bg-white/10" />
-                 <div className="text-center">
-                    <div className="text-3xl font-mono font-bold text-amber-400">{filteredCorrelations.length}</div>
-                    <div className="text-[10px] uppercase tracking-widest text-slate-500 mt-1">Correlations</div>
-                 </div>
-                 <div className="h-12 w-px bg-white/10" />
-                 <div className="text-center">
-                    <div className="text-3xl font-mono font-bold text-red-400">{filteredIncidents.length}</div>
-                    <div className="text-[10px] uppercase tracking-widest text-slate-500 mt-1">Incidents</div>
-                 </div>
-              </div>
+             <div className="flex items-center justify-between mb-3">
+               <p className="text-[10px] uppercase text-slate-500 tracking-wider">
+                 Incident Risk Levels ({riskAssessments.length} {riskAssessments.length === 1 ? 'assessment' : 'assessments'})
+               </p>
+               <span className="text-[9px] uppercase tracking-wider text-slate-500 font-mono">Filtered to dataset</span>
+             </div>
+             {riskAssessments.length > 0 ? (
+               <div className="flex-1 w-full h-36">
+                 <ResponsiveContainer width="100%" height="100%">
+                   <BarChart data={mlRiskDistributionData} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
+                     <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" horizontal={true} vertical={false} />
+                     <XAxis type="number" stroke="#64748b" fontSize={10} allowDecimals={false} />
+                     <YAxis dataKey="level" type="category" stroke="#64748b" fontSize={9} width={65} />
+                     <Tooltip 
+                       cursor={{ fill: '#ffffff05' }}
+                       contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', fontSize: '11px' }}
+                     />
+                     <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={16}>
+                       {mlRiskDistributionData.map((entry, index) => (
+                         <Cell key={`cell-${index}`} fill={entry.fill} />
+                       ))}
+                     </Bar>
+                   </BarChart>
+                 </ResponsiveContainer>
+               </div>
+             ) : (
+               <div className="flex flex-1 flex-col items-center justify-center text-center">
+                 <div className="text-xs text-slate-500">No incident risk assessments recorded for this dataset</div>
+                 <div className="text-[10px] text-slate-600 mt-1">Requires simulated or ingested threat telemetry</div>
+               </div>
+             )}
            </div>
          </Panel>
       </div>
 
+      {/* ROW 5: Threat Activity summary */}
+      {(filteredAlerts.length > 0 || filteredCorrelations.length > 0 || filteredIncidents.length > 0) && (
+      <Panel title="Threat Activity" className="min-h-[140px]">
+        <div className="p-4 flex flex-col h-full">
+           <p className="mb-4 text-[10px] uppercase text-slate-500 tracking-wider">Dataset-scoped threat activity</p>
+           <div className="flex flex-1 items-center gap-8 justify-center">
+              <div className="text-center">
+                 <div className="text-3xl font-mono font-bold text-orange-400">{filteredAlerts.length}</div>
+                 <div className="text-[10px] uppercase tracking-widest text-slate-500 mt-1">Alerts</div>
+              </div>
+              <div className="h-12 w-px bg-white/10" />
+              <div className="text-center">
+                 <div className="text-3xl font-mono font-bold text-amber-400">{filteredCorrelations.length}</div>
+                 <div className="text-[10px] uppercase tracking-widest text-slate-500 mt-1">Correlations</div>
+              </div>
+              <div className="h-12 w-px bg-white/10" />
+              <div className="text-center">
+                 <div className="text-3xl font-mono font-bold text-red-400">{filteredIncidents.length}</div>
+                 <div className="text-[10px] uppercase tracking-widest text-slate-500 mt-1">Incidents</div>
+              </div>
+           </div>
+        </div>
+      </Panel>
+      )}
+
       {/* Detailed Panels */}
       
       {/* Activity Table */}
+      {filteredActivities.length > 0 && (
       <Panel title="Recent Dataset Activity">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs text-slate-300">
@@ -2143,21 +2284,80 @@ function DatasetSecurityView({
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[0.04]">
-              {filteredActivities.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">No dataset activity recorded.</td>
+              {filteredActivities.slice(0, 10).map((act: any) => (
+                <tr key={act.activity_id} className="transition-colors hover:bg-white/[0.02]">
+                  <td className="px-4 py-3 font-mono text-[10px] text-slate-400">{new Date(act.timestamp).toLocaleTimeString()}</td>
+                  <td className="px-4 py-3 text-slate-200">{act.actor}</td>
+                  <td className="px-4 py-3"><span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-orange-200">{act.operation}</span></td>
+                  <td className="px-4 py-3 text-right font-mono text-[10px] text-slate-400">{act.records_accessed.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-[10px] text-slate-500">
+                    {act.export_destination && <span className="block text-red-300">Dest: {act.export_destination}</span>}
+                    {act.sensitive_columns?.length > 0 && <span className="block text-orange-300">Cols: {act.sensitive_columns.join(', ')}</span>}
+                  </td>
                 </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+      )}
+
+      {(filteredIncidents.length > 0 || filteredAlerts.length > 0) && (
+      <div className="grid gap-4 xl:grid-cols-[1.7fr_0.8fr]">
+        {filteredIncidents.length > 0 && (
+        <IncidentsTable 
+           incidents={filteredIncidents} 
+           openIncident={openIncident} 
+           loading={loading} 
+           onDatasetSelect={() => {}}
+        />
+        )}
+        {filteredAlerts.length > 0 && (
+        <AlertStream 
+           alerts={filteredAlerts} 
+           loading={loading} 
+        />
+        )}
+      </div>
+      )}
+
+    </div>
+  )
+}
+
+
+// ---------------------------------------------------------------------------
+// Sidebar Page Views (Live Data)
+// ---------------------------------------------------------------------------
+
+function AlertsPageView({ alerts, loading }: { alerts: Alert[]; loading: boolean }) {
+  return (
+    <div className="space-y-4">
+      <Panel title="All Alerts" action={<span className="font-mono text-[9px] text-slate-500">{alerts.length} TOTAL</span>}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-slate-300">
+            <thead className="border-b border-white/[0.06] bg-black/20 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Time</th>
+                <th className="px-4 py-3">Severity</th>
+                <th className="px-4 py-3">Rule</th>
+                <th className="px-4 py-3">Source</th>
+                <th className="px-4 py-3">Alert ID</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/[0.04]">
+              {loading && alerts.length === 0 ? (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500 animate-pulse">Loading alerts...</td></tr>
+              ) : alerts.length === 0 ? (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No alerts detected. Use the Dataset Security view to run a simulation and generate security telemetry.</td></tr>
               ) : (
-                filteredActivities.slice(0, 10).map((act: any) => (
-                  <tr key={act.activity_id} className="transition-colors hover:bg-white/[0.02]">
-                    <td className="px-4 py-3 font-mono text-[10px] text-slate-400">{new Date(act.timestamp).toLocaleTimeString()}</td>
-                    <td className="px-4 py-3 text-slate-200">{act.actor}</td>
-                    <td className="px-4 py-3"><span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-orange-200">{act.operation}</span></td>
-                    <td className="px-4 py-3 text-right font-mono text-[10px] text-slate-400">{act.records_accessed.toLocaleString()}</td>
-                    <td className="px-4 py-3 text-[10px] text-slate-500">
-                      {act.export_destination && <span className="block text-red-300">Dest: {act.export_destination}</span>}
-                      {act.sensitive_columns?.length > 0 && <span className="block text-orange-300">Cols: {act.sensitive_columns.join(', ')}</span>}
-                    </td>
+                alerts.map((a) => (
+                  <tr key={a.alert_id} className="transition-colors hover:bg-white/[0.02]">
+                    <td className="px-4 py-3 font-mono text-[10px] text-slate-400">{formatTime(a.timestamp)}</td>
+                    <td className="px-4 py-3"><SeverityBadge severity={mapSeverity(a.severity)} /></td>
+                    <td className="px-4 py-3 text-slate-200">{a.rule_name}</td>
+                    <td className="px-4 py-3 font-mono text-[10px] text-slate-400">{a.source}</td>
+                    <td className="px-4 py-3 font-mono text-[10px] text-slate-500">{a.alert_id}</td>
                   </tr>
                 ))
               )}
@@ -2165,25 +2365,250 @@ function DatasetSecurityView({
           </table>
         </div>
       </Panel>
-
-      <div className="grid gap-4 xl:grid-cols-[1.7fr_0.8fr]">
-        <IncidentsTable 
-           incidents={filteredIncidents} 
-           openIncident={openIncident} 
-           loading={loading} 
-           onDatasetSelect={() => {}}
-        />
-        <AlertStream 
-           alerts={filteredAlerts} 
-           loading={loading} 
-        />
-      </div>
-
     </div>
   )
 }
 
+function CorrelationsPageView({ correlations, loading }: { correlations: Correlation[]; loading: boolean }) {
+  return (
+    <div className="space-y-4">
+      <Panel title="All Correlations" action={<span className="font-mono text-[9px] text-slate-500">{correlations.length} TOTAL</span>}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-slate-300">
+            <thead className="border-b border-white/[0.06] bg-black/20 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Rule</th>
+                <th className="px-4 py-3">Entity</th>
+                <th className="px-4 py-3">Alerts</th>
+                <th className="px-4 py-3">Created</th>
+                <th className="px-4 py-3">Correlation ID</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/[0.04]">
+              {loading && correlations.length === 0 ? (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500 animate-pulse">Loading correlations...</td></tr>
+              ) : correlations.length === 0 ? (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No correlations detected. Correlations are generated automatically when multiple alerts match a correlation rule pattern.</td></tr>
+              ) : (
+                correlations.map((c) => (
+                  <tr key={c.correlation_id} className="transition-colors hover:bg-white/[0.02]">
+                    <td className="px-4 py-3 text-slate-200">{c.rule_name}</td>
+                    <td className="px-4 py-3 font-mono text-[10px] text-orange-300">{c.entity_key}</td>
+                    <td className="px-4 py-3 font-mono text-[10px] text-slate-400">{c.alert_ids?.length || 0}</td>
+                    <td className="px-4 py-3 font-mono text-[10px] text-slate-400">{formatTime(c.created_at)}</td>
+                    <td className="px-4 py-3 font-mono text-[10px] text-slate-500">{c.correlation_id}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </div>
+  )
+}
 
+function IncidentsPageView({ incidents, loading, openIncident }: { incidents: Incident[]; loading: boolean; openIncident: (id: string) => void }) {
+  return (
+    <div className="space-y-4">
+      <Panel title="All Incidents" action={<span className="font-mono text-[9px] text-slate-500">{incidents.length} TOTAL</span>}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-slate-300">
+            <thead className="border-b border-white/[0.06] bg-black/20 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Severity</th>
+                <th className="px-4 py-3">Title</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Alerts</th>
+                <th className="px-4 py-3">MITRE</th>
+                <th className="px-4 py-3">Created</th>
+                <th className="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/[0.04]">
+              {loading && incidents.length === 0 ? (
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500 animate-pulse">Loading incidents...</td></tr>
+              ) : incidents.length === 0 ? (
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">No incidents detected. Incidents are automatically created when correlated alerts cross severity thresholds.</td></tr>
+              ) : (
+                incidents.map((inc) => (
+                  <tr key={inc.incident_id} className="transition-colors hover:bg-white/[0.02] cursor-pointer" onClick={() => openIncident(inc.incident_id)}>
+                    <td className="px-4 py-3"><SeverityBadge severity={mapSeverity(inc.severity)} /></td>
+                    <td className="px-4 py-3 text-slate-200 max-w-xs truncate">{inc.title}</td>
+                    <td className="px-4 py-3"><span className="rounded bg-orange-400/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-orange-300">{inc.status}</span></td>
+                    <td className="px-4 py-3 font-mono text-[10px] text-slate-400">{inc.alert_ids?.length || 0}</td>
+                    <td className="px-4 py-3 text-[10px] text-slate-400">{inc.mitre_techniques?.join(", ") || "—"}</td>
+                    <td className="px-4 py-3 font-mono text-[10px] text-slate-400">{formatTime(inc.created_at)}</td>
+                    <td className="px-4 py-3"><ArrowUpRight size={12} className="text-orange-400" /></td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </div>
+  )
+}
+
+function CasesPageView({ cases, loading }: { cases: Case[]; loading: boolean }) {
+  return (
+    <div className="space-y-4">
+      <Panel title="SOC Case Management" action={<span className="font-mono text-[9px] text-slate-500">{cases.length} CASES</span>}>
+        {loading && cases.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-500 animate-pulse">Loading cases...</div>
+        ) : cases.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-500">
+            <BriefcaseBusiness size={24} className="mx-auto mb-2 text-slate-600" />
+            No SOC cases created yet. Cases are created from the Incident Workspace when an analyst escalates an incident.
+          </div>
+        ) : (
+          <div className="space-y-4 p-5">
+            {cases.map((c) => (
+              <div key={c.case_id} className="rounded border border-white/10 bg-black/20 p-4 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-orange-300">{c.case_id}</span>
+                  <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-300">{c.status}</span>
+                </div>
+                <h4 className="mt-2 text-sm font-semibold text-white">{c.title}</h4>
+                <p className="mt-1 text-slate-400">{c.description}</p>
+                <div className="mt-3 flex gap-4 text-[10px] text-slate-500">
+                  <span>Priority: <b className="uppercase text-slate-300">{c.priority}</b></span>
+                  <span>Assignee: <b className="text-slate-300">{c.assignee || "Unassigned"}</b></span>
+                  <span>Incidents: <b className="text-slate-300">{c.incident_ids?.length || 0}</b></span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+    </div>
+  )
+}
+
+function AIInvestigatorPageView({ incidents, loading, openIncident }: { incidents: Incident[]; loading: boolean; openIncident: (id: string) => void }) {
+  return (
+    <div className="space-y-4">
+      <Panel title="AI Investigator" action={<span className="font-mono text-[9px] text-emerald-400">ADVISORY ENGINE</span>}>
+        <div className="border-b border-amber-400/20 bg-amber-400/[0.04] px-5 py-3">
+          <div className="text-[11px] text-amber-200">
+            <strong className="font-semibold">ADVISORY ONLY:</strong> AI Investigator provides analytical recommendations. Select an incident below to view or trigger its AI investigation report.
+          </div>
+        </div>
+        {loading && incidents.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-500 animate-pulse">Loading incidents for investigation...</div>
+        ) : incidents.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-500">
+            <Bot size={28} className="mx-auto mb-2 text-slate-600" />
+            No incidents available for AI investigation. Generate security telemetry using the Dataset Security simulation first.
+          </div>
+        ) : (
+          <div className="space-y-3 p-5">
+            {incidents.map((inc) => (
+              <div key={inc.incident_id} className="flex items-center justify-between rounded border border-white/[0.07] bg-white/[0.015] p-4 transition-colors hover:bg-white/[0.03] cursor-pointer" onClick={() => openIncident(inc.incident_id)}>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <SeverityBadge severity={mapSeverity(inc.severity)} />
+                    <span className="text-xs text-slate-200">{inc.title}</span>
+                  </div>
+                  <div className="mt-1 font-mono text-[10px] text-slate-500">{inc.incident_id} · {formatTime(inc.created_at)}</div>
+                </div>
+                <button className="flex items-center gap-1 rounded bg-orange-500/20 px-2.5 py-1.5 text-[10px] font-semibold text-orange-300 hover:bg-orange-500/30">
+                  <Bot size={12} /> Investigate <ArrowUpRight size={10} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+    </div>
+  )
+}
+
+function ThreatIntelPageView({ incidents, loading, openIncident }: { incidents: Incident[]; loading: boolean; openIncident: (id: string) => void }) {
+  return (
+    <div className="space-y-4">
+      <Panel title="Threat Intelligence" action={<span className="font-mono text-[9px] text-slate-500">IOC ENRICHMENT</span>}>
+        <div className="border-b border-white/[0.06] bg-black/20 px-5 py-3">
+          <div className="text-[11px] text-slate-400">
+            Threat Intelligence enriches incidents with IOC (Indicator of Compromise) lookups. Dataset-only incidents may not have external network IOCs. Select an incident to view its threat intelligence report.
+          </div>
+        </div>
+        {loading && incidents.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-500 animate-pulse">Loading...</div>
+        ) : incidents.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-500">
+            <Crosshair size={24} className="mx-auto mb-2 text-slate-600" />
+            No incidents available for threat intelligence lookup. Generate security telemetry using the Dataset Security simulation first.
+          </div>
+        ) : (
+          <div className="space-y-3 p-5">
+            {incidents.map((inc) => {
+              const isDataset = inc.tags?.some(t => t.includes("dataset:"));
+              return (
+                <div key={inc.incident_id} className="flex items-center justify-between rounded border border-white/[0.07] bg-white/[0.015] p-4 transition-colors hover:bg-white/[0.03] cursor-pointer" onClick={() => openIncident(inc.incident_id)}>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <SeverityBadge severity={mapSeverity(inc.severity)} />
+                      <span className="text-xs text-slate-200">{inc.title}</span>
+                    </div>
+                    <div className="mt-1 font-mono text-[10px] text-slate-500">{inc.incident_id}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isDataset && <span className="rounded bg-blue-400/10 px-1.5 py-0.5 text-[8px] font-bold text-blue-300">DATASET</span>}
+                    <ArrowUpRight size={12} className="text-orange-400" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Panel>
+    </div>
+  )
+}
+
+function ResponsePageView({ incidents, loading, openIncident }: { incidents: Incident[]; loading: boolean; openIncident: (id: string) => void }) {
+  return (
+    <div className="space-y-4">
+      <Panel title="Controlled Response Queue" action={<span className="font-mono text-[9px] text-orange-300">SIMULATION ONLY</span>}>
+        <div className="border-b border-orange-400/20 bg-orange-400/[0.06] px-5 py-3">
+          <div className="flex items-center gap-2 text-[10px] font-bold tracking-widest text-orange-300">
+            <AlertTriangle size={13} />
+            SIMULATION ONLY
+            <span className="font-normal tracking-normal text-orange-300/60">· Analyst approval required · Strict containment sandbox</span>
+          </div>
+        </div>
+        {loading && incidents.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-500 animate-pulse">Loading...</div>
+        ) : incidents.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-500">
+            <Siren size={24} className="mx-auto mb-2 text-slate-600" />
+            No incidents available for response actions. Select an incident from the Incidents page to propose controlled response actions.
+          </div>
+        ) : (
+          <div className="space-y-3 p-5">
+            <p className="text-[11px] text-slate-400 mb-4">Select an incident to propose, approve, and execute simulated response actions.</p>
+            {incidents.map((inc) => (
+              <div key={inc.incident_id} className="flex items-center justify-between rounded border border-white/[0.07] bg-white/[0.015] p-4 transition-colors hover:bg-white/[0.03] cursor-pointer" onClick={() => openIncident(inc.incident_id)}>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <SeverityBadge severity={mapSeverity(inc.severity)} />
+                    <span className="text-xs text-slate-200">{inc.title}</span>
+                  </div>
+                  <div className="mt-1 font-mono text-[10px] text-slate-500">{inc.incident_id} · Status: {inc.status}</div>
+                </div>
+                <button className="flex items-center gap-1 rounded bg-orange-400 px-3 py-1.5 text-[10px] font-bold text-black hover:bg-orange-300">
+                  Open Response Queue <ArrowUpRight size={10} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+    </div>
+  )
+}
 
 function Placeholder({ page }: { page: string }) {
   return (
@@ -2220,12 +2645,15 @@ export function IncidentForgeDashboard() {
   const [datasets, setDatasets] = useState<DatasetAsset[]>([])
   const [datasetActivities, setDatasetActivities] = useState<DatasetActivity[]>([])
   const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null)
-  const [datasetAssessment, setDatasetAssessment] = useState<any | null>(null)
   const [datasetOverview, setDatasetOverview] = useState<any | null>(null)
+  const [simulating, setSimulating] = useState(false)
+  const [simulationFeedback, setSimulationFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   
   const handleDatasetSelect = async (dataset: DatasetAsset) => {
     setSelectedDatasetId(dataset.dataset_id);
+    setDatasetOverview(null);
+    setSimulationFeedback(null);
     setPage("Dataset Security");
     setRefreshing(true);
     try {
@@ -2293,6 +2721,8 @@ export function IncidentForgeDashboard() {
         if (response.ok) {
           const dsId = data.dataset_id || data.assessment?.dataset_id;
           setSelectedDatasetId(dsId);
+          setDatasetOverview(null);
+          setSimulationFeedback(null);
           
           const overviewRes = await fetch(`${baseUrl}/api/v1/data-assets/${dsId}/overview`);
           if (overviewRes.ok) {
@@ -2357,21 +2787,58 @@ export function IncidentForgeDashboard() {
               isOnline={isOnline}
               loading={refreshing && alerts.length === 0}
             />
+          ) : page === "Alerts" ? (
+            <AlertsPageView alerts={alerts} loading={refreshing && alerts.length === 0} />
+          ) : page === "Correlations" ? (
+            <CorrelationsPageView correlations={correlations} loading={refreshing && correlations.length === 0} />
+          ) : page === "Incidents" ? (
+            <IncidentsPageView incidents={incidents} loading={refreshing && incidents.length === 0} openIncident={setIncidentId} />
+          ) : page === "Cases" ? (
+            <CasesPageView cases={cases} loading={refreshing && cases.length === 0} />
+          ) : page === "AI Investigator" ? (
+            <AIInvestigatorPageView incidents={incidents} loading={refreshing && incidents.length === 0} openIncident={setIncidentId} />
+          ) : page === "Threat Intelligence" ? (
+            <ThreatIntelPageView incidents={incidents} loading={refreshing && incidents.length === 0} openIncident={setIncidentId} />
+          ) : page === "Response" ? (
+            <ResponsePageView incidents={incidents} loading={refreshing && incidents.length === 0} openIncident={setIncidentId} />
           ) : page === "Dataset Assets" ? (
             <DatasetAssetsView datasets={datasets} loading={refreshing && datasets.length === 0} onDatasetSelect={handleDatasetSelect} />
           ) : page === "Dataset Security" ? (
-            <DatasetSecurityView overview={datasetOverview} loading={refreshing && !datasetOverview} openIncident={setIncidentId} onSimulate={async () => {
-              setRefreshing(true);
-              try {
-                 await datasetsApi.simulateDemoAttack();
-                 setTimeout(() => fetchLiveTelemetry(), 1500);
-              } catch (e) {
-                 console.error(e);
-                 alert("Simulation failed");
-              } finally {
-                 setTimeout(() => setRefreshing(false), 2000);
-              }
-            }} />
+            <DatasetSecurityView 
+              overview={datasetOverview} 
+              loading={refreshing && !datasetOverview} 
+              openIncident={setIncidentId} 
+              simulating={simulating}
+              simulationFeedback={simulationFeedback}
+              onSimulate={async () => {
+                if (simulating || !datasetOverview) return;
+                setSimulating(true);
+                setSimulationFeedback(null);
+                try {
+                   await datasetsApi.simulateDatasetAttack(datasetOverview.dataset_id);
+                   
+                   // Re-fetch dataset overview immediately
+                   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+                   const response = await fetch(`${baseUrl}/api/v1/data-assets/${datasetOverview.dataset_id}/overview`);
+                   if (response.ok) {
+                      setDatasetOverview(await response.json());
+                   }
+                   setSimulationFeedback({
+                     type: 'success',
+                     message: 'Simulation completed: 4 synthetic SOC events processed through Detection, Correlation, Incident, and ML Risk scoring.'
+                   });
+                   fetchLiveTelemetry();
+                } catch (e: any) {
+                   console.error(e);
+                   setSimulationFeedback({
+                     type: 'error',
+                     message: `Simulation failed: ${e?.message || 'Unable to execute attack scenario'}`
+                   });
+                } finally {
+                   setSimulating(false);
+                }
+              }} 
+            />
           ) : (
             <Placeholder page={page} />
           )}

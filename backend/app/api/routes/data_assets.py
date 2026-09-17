@@ -255,12 +255,16 @@ def simulate_dataset_attack(
     sim_src_ip = "198.51.100.42"   # TEST-NET — clearly synthetic
     sim_dst_ip = "203.0.113.99"    # TEST-NET — clearly synthetic
 
+    # Unique suffix per run to avoid UNIQUE constraint on re-simulation
+    import hashlib
+    run_hash = hashlib.sha256(f"{asset_id}-{base_ts.isoformat()}".encode()).hexdigest()[:8]
+
     # Sensitive columns from the actual registered asset (sanitized names only)
     sensitive_cols = asset.sensitive_columns[:5]
 
     synthetic_activities = [
         DatasetActivity(
-            activity_id=f"sim-{asset_id[:8]}-open",
+            activity_id=f"sim-{asset_id[:8]}-{run_hash}-open",
             timestamp=base_ts,
             dataset_id=asset_id,
             dataset_name=asset.name,
@@ -273,7 +277,7 @@ def simulate_dataset_attack(
             context={"sensitivity": asset.sensitivity.value, "simulated": True},
         ),
         DatasetActivity(
-            activity_id=f"sim-{asset_id[:8]}-col-access",
+            activity_id=f"sim-{asset_id[:8]}-{run_hash}-col-access",
             timestamp=base_ts.replace(minute=(base_ts.minute + 3) % 60),
             dataset_id=asset_id,
             dataset_name=asset.name,
@@ -286,7 +290,7 @@ def simulate_dataset_attack(
             context={"sensitivity": asset.sensitivity.value, "simulated": True},
         ),
         DatasetActivity(
-            activity_id=f"sim-{asset_id[:8]}-bulk",
+            activity_id=f"sim-{asset_id[:8]}-{run_hash}-bulk",
             timestamp=base_ts.replace(minute=(base_ts.minute + 8) % 60),
             dataset_id=asset_id,
             dataset_name=asset.name,
@@ -299,7 +303,7 @@ def simulate_dataset_attack(
             context={"sensitivity": asset.sensitivity.value, "simulated": True},
         ),
         DatasetActivity(
-            activity_id=f"sim-{asset_id[:8]}-export",
+            activity_id=f"sim-{asset_id[:8]}-{run_hash}-export",
             timestamp=base_ts.replace(minute=(base_ts.minute + 14) % 60),
             dataset_id=asset_id,
             dataset_name=asset.name,
@@ -325,7 +329,8 @@ def simulate_dataset_attack(
         try:
             svc.record_activity(act)
         except Exception:
-            logger.warning("Failed to record simulation activity %s", act.activity_id)
+            logger.warning("Failed to record simulation activity %s (duplicate or constraint error — skipping)", act.activity_id)
+            session.rollback()
 
     # Process through the existing SOC pipeline
     pipeline = _build_pipeline(session)
@@ -437,13 +442,15 @@ def get_dataset_overview(
         if d_inc.tags and any(urn_tag in tag for tag in d_inc.tags):
             incidents.append(d_inc)
             
-    # 5. Risk Assessments
+    # 5. Risk Assessments (sorted newest-first by scored_at)
     all_risks_pers = risk_repo.list_assessments(limit=1000)
-    risk_assessments = []
-    for p_risk in all_risks_pers:
-        d_risk = _to_domain_assessment(p_risk)
-        if d_risk.incident_id in [inc.incident_id for inc in incidents]:
-            risk_assessments.append(d_risk)
+    matching_inc_ids = {inc.incident_id for inc in incidents}
+    risk_assessments = [
+        _to_domain_assessment(p_risk)
+        for p_risk in all_risks_pers
+        if p_risk.incident_id in matching_inc_ids
+    ]
+    risk_assessments.sort(key=lambda r: r.scored_at, reverse=True)
             
     # 6. Threat Intel
     all_ti_pers = []
